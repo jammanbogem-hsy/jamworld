@@ -1,0 +1,1200 @@
+{
+  "version": 2,
+  "style": "moa-toon-v2",
+  "source": "Codex built-in ImageGen; original art",
+  "rectFormat": "x,y,width,height; exact source region overrides uniform cells",
+  "sheets": [
+    {
+      "file": "iso-avatar.png",
+      "view": "iso",
+      "kind": "avatar",
+      "group": "avatar",
+      "cols": 4,
+      "rows": 4,
+      "size": [
+        1254,
+        1254
+      ],
+      "frames": [
+        {
+          "rect": [
+            63,
+            24,
+            210,
+            295
+          ],
+          "name": "se0"
+        },
+        {
+          "rect": [
+            378,
+            24,
+            208,
+            296
+          ],
+          "name": "se1"
+        },
+        {
+          "rect": [
+            690,
+            27,
+            209,
+            293
+          ],
+          "name": "se2"
+        },
+        {
+          "rect": [
+            999,
+            29,
+            207,
+            291
+          ],
+          "name": "se3"
+        },
+        {
+          "rect": [
+            60,
+            325,
+            211,
+            291
+          ],
+          "name": "sw0"
+        },
+        {
+          "rect": [
+            371,
+            326,
+            210,
+            288
+          ],
+          "name": "sw1"
+        },
+        {
+          "rect": [
+            687,
+            323,
+            211,
+            292
+          ],
+          "name": "sw2"
+        },
+        {
+          "rect": [
+            995,
+            322,
+            212,
+            293
+          ],
+          "name": "sw3"
+        },
+        {
+          "rect": [
+            59,
+            622,
+            207,
+            283
+          ],
+          "name": "nw0"
+        },
+        {
+          "rect": [
+            372,
+            618,
+            213,
+            290
+          ],
+          "name": "nw1"
+        },
+        {
+          "rect": [
+            688,
+            619,
+            211,
+            289
+          ],
+          "name": "nw2"
+        },
+        {
+          "rect": [
+            1001,
+            620,
+            210,
+            292
+          ],
+          "name": "nw3"
+        },
+        {
+          "rect": [
+            60,
+            908,
+            217,
+            292
+          ],
+          "name": "ne0"
+        },
+        {
+          "rect": [
+            377,
+            908,
+            212,
+            293
+          ],
+          "name": "ne1"
+        },
+        {
+          "rect": [
+            690,
+            908,
+            212,
+            294
+          ],
+          "name": "ne2"
+        },
+        {
+          "rect": [
+            997,
+            913,
+            211,
+            289
+          ],
+          "name": "ne3"
+        }
+      ]
+    },
+    {
+      "file": "iso-building.png",
+      "view": "iso",
+      "kind": "props",
+      "group": "building",
+      "cols": 4,
+      "rows": 3,
+      "size": [
+        1448,
+        1086
+      ],
+      "frames": [
+        {
+          "rect": [
+            55,
+            34,
+            262,
+            291
+          ],
+          "name": "stone",
+          "assetId": "wall.stone",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            411,
+            30,
+            259,
+            293
+          ],
+          "name": "wood",
+          "assetId": "wall.wood",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            763,
+            30,
+            268,
+            295
+          ],
+          "name": "brick",
+          "assetId": "wall.brick",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            1112,
+            57,
+            293,
+            283
+          ],
+          "name": "stone_seg@a",
+          "assetId": "wall.stone_seg",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            32,
+            378,
+            316,
+            287
+          ],
+          "name": "stone_seg@b",
+          "assetId": "wall.stone_seg",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            411,
+            394,
+            305,
+            296
+          ],
+          "name": "fence@a",
+          "assetId": "fence.wood",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            747,
+            370,
+            289,
+            305
+          ],
+          "name": "fence@b",
+          "assetId": "fence.wood",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            1086,
+            353,
+            336,
+            342
+          ],
+          "name": "house@a",
+          "assetId": "house.small",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            26,
+            691,
+            335,
+            354
+          ],
+          "name": "house@b",
+          "assetId": "house.small",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            435,
+            697,
+            252,
+            336
+          ],
+          "name": "quiz@a",
+          "assetId": "act.quiz",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            759,
+            710,
+            267,
+            329
+          ],
+          "name": "quiz@b",
+          "assetId": "act.quiz",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            1075,
+            696,
+            337,
+            362
+          ],
+          "name": "portal",
+          "assetId": "act.portal",
+          "orient": "a"
+        }
+      ]
+    },
+    {
+      "file": "iso-furniture.png",
+      "view": "iso",
+      "kind": "props",
+      "group": "furniture",
+      "cols": 4,
+      "rows": 3,
+      "size": [
+        1448,
+        1086
+      ],
+      "frames": [
+        {
+          "rect": [
+            48,
+            79,
+            292,
+            273
+          ],
+          "name": "desk",
+          "assetId": "furn.desk",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            410,
+            41,
+            229,
+            328
+          ],
+          "name": "chair@a",
+          "assetId": "furn.chair",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            772,
+            71,
+            220,
+            297
+          ],
+          "name": "chair@b",
+          "assetId": "furn.chair",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            1096,
+            53,
+            308,
+            330
+          ],
+          "name": "blackboard@a",
+          "assetId": "furn.blackboard",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            89,
+            386,
+            210,
+            314
+          ],
+          "name": "blackboard@b",
+          "assetId": "furn.blackboard",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            425,
+            386,
+            267,
+            334
+          ],
+          "name": "bookshelf@a",
+          "assetId": "furn.bookshelf",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            808,
+            391,
+            184,
+            318
+          ],
+          "name": "bookshelf@b",
+          "assetId": "furn.bookshelf",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            1117,
+            414,
+            282,
+            292
+          ],
+          "name": "table",
+          "assetId": "furn.table",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            49,
+            711,
+            339,
+            337
+          ],
+          "name": "bench@a",
+          "assetId": "furn.bench",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            463,
+            730,
+            206,
+            296
+          ],
+          "name": "bench@b",
+          "assetId": "furn.bench",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            809,
+            721,
+            214,
+            300
+          ],
+          "name": "sign@a",
+          "assetId": "act.sign",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            1149,
+            728,
+            220,
+            296
+          ],
+          "name": "sign@b",
+          "assetId": "act.sign",
+          "orient": "b"
+        }
+      ]
+    },
+    {
+      "file": "iso-nature.png",
+      "view": "iso",
+      "kind": "props",
+      "group": "nature",
+      "cols": 4,
+      "rows": 3,
+      "size": [
+        1448,
+        1086
+      ],
+      "frames": [
+        {
+          "rect": [
+            56,
+            52,
+            307,
+            328
+          ],
+          "name": "tree",
+          "assetId": "nature.tree",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            425,
+            41,
+            278,
+            337
+          ],
+          "name": "pine",
+          "assetId": "nature.pine",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            751,
+            119,
+            302,
+            255
+          ],
+          "name": "bush",
+          "assetId": "nature.bush",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            1101,
+            103,
+            319,
+            270
+          ],
+          "name": "rock",
+          "assetId": "nature.rock",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            39,
+            405,
+            327,
+            283
+          ],
+          "name": "flower",
+          "assetId": "nature.flower",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            407,
+            398,
+            301,
+            300
+          ],
+          "name": "mushroom",
+          "assetId": "nature.mushroom",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            757,
+            389,
+            301,
+            321
+          ],
+          "name": "crate",
+          "assetId": "deco.crate",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            1146,
+            397,
+            248,
+            312
+          ],
+          "name": "barrel",
+          "assetId": "deco.barrel",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            64,
+            697,
+            297,
+            346
+          ],
+          "name": "flag",
+          "assetId": "deco.flag",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            461,
+            701,
+            164,
+            347
+          ],
+          "name": "lamp",
+          "assetId": "deco.lamp",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            739,
+            721,
+            326,
+            334
+          ],
+          "name": "fountain",
+          "assetId": "deco.fountain",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            1126,
+            743,
+            287,
+            314
+          ],
+          "name": "flowerpot",
+          "assetId": "deco.flowerpot",
+          "orient": "a"
+        }
+      ]
+    },
+    {
+      "file": "td-avatar.png",
+      "view": "td",
+      "kind": "avatar",
+      "group": "avatar",
+      "cols": 4,
+      "rows": 4,
+      "size": [
+        1254,
+        1254
+      ],
+      "frames": [
+        {
+          "rect": [
+            62,
+            31,
+            200,
+            280
+          ],
+          "name": "s0"
+        },
+        {
+          "rect": [
+            371,
+            28,
+            201,
+            292
+          ],
+          "name": "s1"
+        },
+        {
+          "rect": [
+            682,
+            30,
+            201,
+            281
+          ],
+          "name": "s2"
+        },
+        {
+          "rect": [
+            992,
+            28,
+            201,
+            292
+          ],
+          "name": "s3"
+        },
+        {
+          "rect": [
+            69,
+            321,
+            192,
+            292
+          ],
+          "name": "w0"
+        },
+        {
+          "rect": [
+            387,
+            323,
+            192,
+            282
+          ],
+          "name": "w1"
+        },
+        {
+          "rect": [
+            690,
+            322,
+            192,
+            290
+          ],
+          "name": "w2"
+        },
+        {
+          "rect": [
+            1001,
+            323,
+            196,
+            277
+          ],
+          "name": "w3"
+        },
+        {
+          "rect": [
+            73,
+            622,
+            193,
+            274
+          ],
+          "name": "n0"
+        },
+        {
+          "rect": [
+            380,
+            611,
+            199,
+            293
+          ],
+          "name": "n1"
+        },
+        {
+          "rect": [
+            688,
+            623,
+            194,
+            273
+          ],
+          "name": "n2"
+        },
+        {
+          "rect": [
+            1005,
+            609,
+            196,
+            295
+          ],
+          "name": "n3"
+        },
+        {
+          "rect": [
+            60,
+            909,
+            202,
+            296
+          ],
+          "name": "e0"
+        },
+        {
+          "rect": [
+            373,
+            911,
+            200,
+            289
+          ],
+          "name": "e1"
+        },
+        {
+          "rect": [
+            681,
+            910,
+            201,
+            295
+          ],
+          "name": "e2"
+        },
+        {
+          "rect": [
+            995,
+            913,
+            198,
+            285
+          ],
+          "name": "e3"
+        }
+      ]
+    },
+    {
+      "file": "td-building.png",
+      "view": "td",
+      "kind": "props",
+      "group": "building",
+      "cols": 4,
+      "rows": 3,
+      "size": [
+        1254,
+        1254
+      ],
+      "frames": [
+        {
+          "rect": [
+            47,
+            86,
+            231,
+            280
+          ],
+          "name": "stone",
+          "assetId": "wall.stone",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            345,
+            82,
+            248,
+            284
+          ],
+          "name": "wood",
+          "assetId": "wall.wood",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            646,
+            82,
+            225,
+            284
+          ],
+          "name": "brick",
+          "assetId": "wall.brick",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            901,
+            152,
+            332,
+            192
+          ],
+          "name": "stone_seg@a",
+          "assetId": "wall.stone_seg",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            87,
+            425,
+            167,
+            349
+          ],
+          "name": "stone_seg@b",
+          "assetId": "wall.stone_seg",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            316,
+            509,
+            332,
+            218
+          ],
+          "name": "fence@a",
+          "assetId": "fence.wood",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            706,
+            453,
+            108,
+            290
+          ],
+          "name": "fence@b",
+          "assetId": "fence.wood",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            897,
+            419,
+            337,
+            348
+          ],
+          "name": "house@a",
+          "assetId": "house.small",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            31,
+            850,
+            286,
+            313
+          ],
+          "name": "house@b",
+          "assetId": "house.small",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            357,
+            848,
+            274,
+            321
+          ],
+          "name": "quiz@a",
+          "assetId": "act.quiz",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            707,
+            838,
+            118,
+            335
+          ],
+          "name": "quiz@b",
+          "assetId": "act.quiz",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            894,
+            824,
+            343,
+            342
+          ],
+          "name": "portal",
+          "assetId": "act.portal",
+          "orient": "a"
+        }
+      ]
+    },
+    {
+      "file": "td-furniture.png",
+      "view": "td",
+      "kind": "props",
+      "group": "furniture",
+      "cols": 4,
+      "rows": 3,
+      "size": [
+        1254,
+        1254
+      ],
+      "frames": [
+        {
+          "rect": [
+            38,
+            106,
+            274,
+            271
+          ],
+          "name": "desk",
+          "assetId": "furn.desk",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            364,
+            56,
+            206,
+            321
+          ],
+          "name": "chair@a",
+          "assetId": "furn.chair",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            644,
+            93,
+            179,
+            283
+          ],
+          "name": "chair@b",
+          "assetId": "furn.chair",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            857,
+            110,
+            365,
+            267
+          ],
+          "name": "blackboard@a",
+          "assetId": "furn.blackboard",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            105,
+            423,
+            120,
+            345
+          ],
+          "name": "blackboard@b",
+          "assetId": "furn.blackboard",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            323,
+            440,
+            287,
+            325
+          ],
+          "name": "bookshelf@a",
+          "assetId": "furn.bookshelf",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            674,
+            433,
+            139,
+            329
+          ],
+          "name": "bookshelf@b",
+          "assetId": "furn.bookshelf",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            887,
+            459,
+            330,
+            312
+          ],
+          "name": "table",
+          "assetId": "furn.table",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            31,
+            861,
+            393,
+            276
+          ],
+          "name": "bench@a",
+          "assetId": "furn.bench",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            463,
+            819,
+            154,
+            317
+          ],
+          "name": "bench@b",
+          "assetId": "furn.bench",
+          "orient": "b"
+        },
+        {
+          "rect": [
+            674,
+            798,
+            290,
+            352
+          ],
+          "name": "sign@a",
+          "assetId": "act.sign",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            1058,
+            804,
+            92,
+            344
+          ],
+          "name": "sign@b",
+          "assetId": "act.sign",
+          "orient": "b"
+        }
+      ]
+    },
+    {
+      "file": "td-nature.png",
+      "view": "td",
+      "kind": "props",
+      "group": "nature",
+      "cols": 4,
+      "rows": 3,
+      "size": [
+        1254,
+        1254
+      ],
+      "frames": [
+        {
+          "rect": [
+            19,
+            99,
+            297,
+            335
+          ],
+          "name": "tree",
+          "assetId": "nature.tree",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            339,
+            86,
+            265,
+            344
+          ],
+          "name": "pine",
+          "assetId": "nature.pine",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            637,
+            165,
+            291,
+            257
+          ],
+          "name": "bush",
+          "assetId": "nature.bush",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            945,
+            144,
+            286,
+            276
+          ],
+          "name": "rock",
+          "assetId": "nature.rock",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            27,
+            497,
+            289,
+            268
+          ],
+          "name": "flower",
+          "assetId": "nature.flower",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            332,
+            487,
+            285,
+            278
+          ],
+          "name": "mushroom",
+          "assetId": "nature.mushroom",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            657,
+            491,
+            245,
+            288
+          ],
+          "name": "crate",
+          "assetId": "deco.crate",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            980,
+            483,
+            240,
+            304
+          ],
+          "name": "barrel",
+          "assetId": "deco.barrel",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            40,
+            810,
+            276,
+            352
+          ],
+          "name": "flag",
+          "assetId": "deco.flag",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            388,
+            797,
+            161,
+            368
+          ],
+          "name": "lamp",
+          "assetId": "deco.lamp",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            613,
+            817,
+            319,
+            345
+          ],
+          "name": "fountain",
+          "assetId": "deco.fountain",
+          "orient": "a"
+        },
+        {
+          "rect": [
+            972,
+            856,
+            257,
+            300
+          ],
+          "name": "flowerpot",
+          "assetId": "deco.flowerpot",
+          "orient": "a"
+        }
+      ]
+    }
+  ]
+}

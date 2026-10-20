@@ -1,0 +1,11 @@
+**/node_modules/
+**/.dev.vars*
+**/.env*
+**/.wrangler/
+**/.sites-runtime/
+**/.vinext/
+**/dist/
+**/*.tsbuildinfo
+.DS_Store
+*.apk
+*.xapk
