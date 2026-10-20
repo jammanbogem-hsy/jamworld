@@ -57,3 +57,4 @@ next-env.d.ts
 
 # local worker secrets
 .dev.vars*
+!.env.example

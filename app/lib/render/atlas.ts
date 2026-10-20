@@ -18,7 +18,8 @@ export interface AtlasImage {
 
 export interface LoadedAtlas {
   name: string;
-  image: HTMLImageElement;
+  /** 아바타 외형 적용 시 색을 바꾼 캔버스로 교체될 수 있다 */
+  image: HTMLImageElement | HTMLCanvasElement;
   frames: Record<string, AtlasFrame>;
 }
 
@@ -81,11 +82,34 @@ export function loadAtlas(name: string): Promise<LoadedAtlas | null> {
   return promise;
 }
 
+/** 외형 교체 전 원본 이미지 */
+const originals = new Map<string, HTMLImageElement | HTMLCanvasElement>();
+
 function release(name: string) {
   const a = atlases.get(name);
   if (!a) return;
-  (a.image as AtlasImage).src = ""; // 디코드된 비트맵 해제
+  const orig = originals.get(name);
+  if (orig && "src" in orig) (orig as AtlasImage).src = "";
+  else if ("src" in a.image) (a.image as AtlasImage).src = ""; // 디코드된 비트맵 해제
+  if (a.image instanceof Object && "width" in a.image && !("src" in a.image)) (a.image as HTMLCanvasElement).width = 0;
+  originals.delete(name);
   atlases.delete(name);
+}
+
+export function originalAtlasImage(name: string) {
+  const a = atlases.get(name);
+  if (!a) return null;
+  return originals.get(name) ?? a.image;
+}
+
+/** 아틀라스 이미지를 (색을 바꾼) 캔버스 등으로 교체. 프레임 좌표는 그대로 */
+export function replaceAtlasImage(name: string, image: HTMLImageElement | HTMLCanvasElement) {
+  const a = atlases.get(name);
+  if (!a) return;
+  if (!originals.has(name)) originals.set(name, a.image);
+  const prev = a.image;
+  a.image = image;
+  if (prev !== image && prev !== originals.get(name) && !("src" in prev)) (prev as HTMLCanvasElement).width = 0;
 }
 
 const V2_SHEETS = ["nature", "furniture", "building"];
@@ -116,8 +140,85 @@ export async function loadViewAtlases(view: ViewMode): Promise<string[]> {
     if (!results[3] && (await loadAtlas("avatar"))) keep.add("avatar");
   }
   if (my !== generation) return [...keep].filter((n) => atlases.has(n));
-  for (const name of [...atlases.keys()]) if (!keep.has(name)) release(name);
+  for (const name of [...atlases.keys()]) if (!keep.has(name) && !userAtlasForView(name, view)) release(name);
   return [...keep];
+}
+
+// ---------- 사용자(공방) 에셋 그림 ----------
+// 이름: u-<에셋id>-td / -iso / -tx, 프레임 "img". 현재 시점 것만 유지(텍스처는 두 시점 공용)
+
+const USER_MAX_PX = 256;
+let userView: ViewMode = "td";
+
+function userAtlasForView(name: string, view: ViewMode) {
+  if (!name.startsWith("u-")) return false;
+  return name.endsWith("-tx") || name.endsWith(view === "iso" ? "-iso" : "-td");
+}
+
+/** 투명 여백을 잘라 내고 긴 변 256px 이하로 줄인 캔버스 (바닥 텍스처는 자르지 않음) */
+async function loadTrimmed(url: string, trim: boolean): Promise<HTMLCanvasElement | null> {
+  try {
+    const img = new Image();
+    img.decoding = "async";
+    img.src = url;
+    await img.decode();
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    let x0 = 0, y0 = 0, x1 = w - 1, y1 = h - 1;
+    if (trim) {
+      const probe = document.createElement("canvas");
+      probe.width = w;
+      probe.height = h;
+      const g = probe.getContext("2d", { willReadFrequently: true })!;
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, w, h).data;
+      x0 = w; y0 = h; x1 = -1; y1 = -1;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 24) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+      probe.width = probe.height = 0;
+      if (x1 < 0) return null;
+    }
+    const bw = x1 - x0 + 1;
+    const bh = y1 - y0 + 1;
+    const s = Math.min(1, USER_MAX_PX / Math.max(bw, bh));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(bw * s));
+    c.height = Math.max(1, Math.round(bh * s));
+    const g = c.getContext("2d")!;
+    g.imageSmoothingQuality = "high";
+    g.drawImage(img, x0, y0, bw, bh, 0, 0, c.width, c.height);
+    img.src = "";
+    return c;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 사용자 에셋 그림 로드: 현재 시점(td/iso)과 바닥 텍스처만. 권한이 없거나 실패하면 도형으로 대체된다.
+ * entries: [에셋 key(u: 제외), { td?, iso?, texture? } URL]
+ */
+export async function loadUserImages(view: ViewMode, entries: Array<[string, { td?: string; iso?: string; texture?: string }]>) {
+  userView = view;
+  for (const name of [...atlases.keys()]) if (name.startsWith("u-") && !userAtlasForView(name, view)) release(name);
+  await Promise.all(
+    entries.map(async ([key, v]) => {
+      const jobs: Array<[string, string | undefined, boolean]> = [
+        [`u-${key}-${view === "iso" ? "iso" : "td"}`, view === "iso" ? v.iso : v.td, true],
+        [`u-${key}-tx`, v.texture, false],
+      ];
+      for (const [name, url, trim] of jobs) {
+        if (!url || atlases.has(name)) continue;
+        const c = await loadTrimmed(url, trim);
+        if (!c || !userAtlasForView(name, userView)) continue;
+        atlases.set(name, { name, image: c, frames: { img: { x: 0, y: 0, w: c.width, h: c.height, ax: 0.5, ay: 1 } } });
+      }
+    }),
+  );
 }
 
 export function loadedAtlasNames() {

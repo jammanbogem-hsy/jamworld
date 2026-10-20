@@ -125,6 +125,12 @@ export default function Dashboard() {
           모아 월드
         </div>
         <div className="row">
+          <a className="btn" href="/workshop">
+            에셋 공방
+          </a>
+          <a className="btn" href="/workshop?tab=avatar">
+            내 아바타
+          </a>
           <button className="btn" onClick={() => fileRef.current?.click()}>
             JSON 가져오기
           </button>

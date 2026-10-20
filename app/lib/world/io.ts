@@ -1,5 +1,6 @@
 // 맵 JSON 경계(가져오기·저장소·서버 요청). 타입 단언 대신 필드별로 검사해 깨끗한 문서를 새로 만든다.
-import { SCHEMA_VERSION, type Interaction, type MapDoc, type PlacedObject, type Rot, type Zone } from "./types.ts";
+import { registerUserAsset, USER_PREFIX } from "./catalog.ts";
+import { SCHEMA_VERSION, type EmbeddedAsset, type Interaction, type MapDoc, type PlacedObject, type Rot, type Zone } from "./types.ts";
 import { validateMap, type ValidationIssue } from "./validate.ts";
 
 export const EXPORT_FORMAT = "moa-world/map";
@@ -80,6 +81,44 @@ function sanitizeInteraction(v: unknown, where: string): Interaction {
   }
 }
 
+const EMBED_CATEGORIES = new Set(["terrain", "nature", "building", "furniture", "interactive", "decor", "character"]);
+const SAFE_URL = /^\/api\/workshop\/files\/[A-Za-z0-9_\-./%]+$/;
+
+/** 맵에 내장된 사용자 에셋 정보 검증 (그림 URL 은 같은 사이트의 권한 확인 경로만) */
+function sanitizeEmbedded(raw: unknown): Record<string, EmbeddedAsset> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const o = obj(raw, "assets");
+  const entries = Object.entries(o);
+  if (entries.length > 200) throw new SchemaError("assets: 항목이 너무 많습니다");
+  const out: Record<string, EmbeddedAsset> = {};
+  for (const [id, v] of entries) {
+    if (!id.startsWith(USER_PREFIX) || !/^u:[A-Za-z0-9_-]{1,64}$/.test(id)) throw new SchemaError(`assets: 잘못된 에셋 id ${id.slice(0, 40)}`);
+    const e = obj(v, `assets.${id}`);
+    const kind = e.kind === "tile" ? "tile" : e.kind === "object" ? "object" : null;
+    if (!kind) throw new SchemaError(`assets.${id}.kind: tile/object 가 아닙니다`);
+    const category = String(e.category ?? "");
+    if (!EMBED_CATEGORIES.has(category)) throw new SchemaError(`assets.${id}.category: 알 수 없는 분류`);
+    const fp = obj(e.footprint ?? { w: 1, d: 1 }, `assets.${id}.footprint`);
+    const fw = int(fp.w, `assets.${id}.footprint.w`);
+    const fd = int(fp.d, `assets.${id}.footprint.d`);
+    if (fw < 1 || fw > 3 || fd < 1 || fd > 3) throw new SchemaError(`assets.${id}.footprint: 1~3 칸이어야 합니다`);
+    const height = typeof e.height === "number" && Number.isFinite(e.height) ? Math.max(0, Math.min(3, e.height)) : 1;
+    const views = obj(e.views ?? {}, `assets.${id}.views`);
+    const url = (u: unknown) => (typeof u === "string" && SAFE_URL.test(u) && !u.includes("..") ? u : undefined);
+    out[id] = {
+      name: str(e.name, `assets.${id}.name`, 30),
+      kind,
+      category: category as EmbeddedAsset["category"],
+      tags: arr(e.tags ?? [], `assets.${id}.tags`, 8).map((t, i) => str(t, `assets.${id}.tags[${i}]`, 12)),
+      footprint: { w: fw, d: fd },
+      blocking: e.blocking === true,
+      height,
+      views: { td: url(views.td), iso: url(views.iso), texture: url(views.texture) },
+    };
+  }
+  return out;
+}
+
 /** 신뢰할 수 없는 값 → 깨끗한 MapDoc. 구조가 틀리면 SchemaError */
 export function sanitizeMap(raw: unknown): MapDoc {
   const r = obj(raw, "맵");
@@ -124,6 +163,9 @@ export function sanitizeMap(raw: unknown): MapDoc {
   const interactions = arr(r.interactions ?? [], "interactions", IO_LIMITS.maxInteractions).map((v, i) =>
     sanitizeInteraction(v, `interactions[${i}]`),
   );
+  const assets = sanitizeEmbedded(r.assets);
+  // 브라우저: 편집기 캐시(전역)에 등록. 서버: 등록하지 않음(검증은 validateMap 이 맵 내장 범위로 수행)
+  if (assets) for (const [id, e] of Object.entries(assets)) registerUserAsset(id, e);
   const sp = obj(r.spawn, "spawn");
   const nextId = r.nextId === undefined ? 1 : int(r.nextId, "nextId");
   return {
@@ -139,6 +181,7 @@ export function sanitizeMap(raw: unknown): MapDoc {
     interactions,
     spawn: { x: int(sp.x, "spawn.x"), y: int(sp.y, "spawn.y") },
     nextId: Math.max(1, nextId),
+    ...(assets && Object.keys(assets).length ? { assets } : {}),
   };
 }
 

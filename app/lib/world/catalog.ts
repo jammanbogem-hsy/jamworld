@@ -1,4 +1,4 @@
-import type { AssetDef, Rot, ViewRender } from "./types.ts";
+import type { AssetDef, EmbeddedAsset, Rot, ViewRender } from "./types.ts";
 
 type Def = Omit<AssetDef, "render" | "source" | "orients">;
 
@@ -166,8 +166,95 @@ export const CATALOG: AssetDef[] = DEFS.map((d) => {
 
 const BY_ID = new Map(CATALOG.map((a) => [a.id, a]));
 
+/**
+ * 사용자(공방) 에셋 id 는 "u:<에셋 id>". 조회 순서: 내장 카탈로그 → 요청 범위(맵·보관함 정의, withAssetScope) → 전역 레지스트리.
+ * 전역 레지스트리는 브라우저에서만 켠다(편집기 캐시). 서버는 요청마다 범위를 넘겨 다른 요청과 정의가 섞이지 않게 한다.
+ */
+const USER = new Map<string, { def: AssetDef; embed: EmbeddedAsset }>();
+const USER_LIMIT = 500;
+let userRegistryEnabled = typeof window !== "undefined";
+
+export const USER_PREFIX = "u:";
+
+/** 테스트·특수 환경용: 전역 레지스트리 켜기/끄기 (끄면 비움) */
+export function enableUserRegistry(on = true) {
+  userRegistryEnabled = on;
+  if (!on) USER.clear();
+}
+
+type ScopeEntry = { def: AssetDef; embed: EmbeddedAsset };
+let scope: Map<string, ScopeEntry> | null = null;
+const scopeCache = new WeakMap<object, Map<string, ScopeEntry>>();
+
+/**
+ * fn 을 실행하는 동안만 assets 정의를 보이게 한다. fn 은 동기 함수여야 한다(await 를 넘어 유지되지 않음).
+ * 겹쳐 쓰면 안쪽 정의가 우선한다.
+ */
+export function withAssetScope<T>(assets: Record<string, EmbeddedAsset> | undefined | null, fn: () => T): T {
+  if (!assets || Object.keys(assets).length === 0) return fn();
+  let m = scopeCache.get(assets);
+  if (!m) {
+    m = new Map(Object.entries(assets).filter(([id]) => id.startsWith(USER_PREFIX)).map(([id, e]) => [id, { def: defFromEmbedded(id, e), embed: e }]));
+    scopeCache.set(assets, m);
+  }
+  const prev = scope;
+  scope = prev ? new Map([...prev, ...m]) : m;
+  try {
+    return fn();
+  } finally {
+    scope = prev;
+  }
+}
+
 export function getAsset(id: string): AssetDef | undefined {
-  return BY_ID.get(id);
+  return BY_ID.get(id) ?? scope?.get(id)?.def ?? (userRegistryEnabled ? USER.get(id)?.def : undefined);
+}
+
+/** 매니페스트·맵 내장 정보 → 카탈로그 항목 (그림 프레임은 `u-<id>-td:img` 등으로 따로 로드) */
+export function defFromEmbedded(id: string, e: EmbeddedAsset): AssetDef {
+  const key = id.slice(USER_PREFIX.length);
+  const tile = e.kind === "tile";
+  return {
+    id,
+    name: e.name,
+    kind: e.kind,
+    category: e.category,
+    tags: e.tags,
+    footprint: tile ? { w: 1, d: 1 } : e.footprint,
+    height: tile ? 0 : e.height,
+    blocking: e.blocking,
+    walkable: tile ? !e.blocking : undefined,
+    shape: tile ? "flat" : "box",
+    colors: tile ? { top: "#b7c4d8", side: "#8b99b3" } : { top: "#e6ecf5", side: "#a9b6cc" },
+    orients: 1,
+    render: {
+      td: { sprites: e.views.td ? [{ ref: `u-${key}-td:img`, scale: 1.05 }] : [] },
+      iso: { sprites: e.views.iso ? [{ ref: `u-${key}-iso:img`, scale: 1.05 }] : [] },
+      ...(e.views.texture ? { texture: `u-${key}-tx:img` } : {}),
+    },
+    source: "user",
+  };
+}
+
+export function registerUserAsset(id: string, e: EmbeddedAsset) {
+  if (!userRegistryEnabled || !id.startsWith(USER_PREFIX)) return;
+  USER.delete(id);
+  USER.set(id, { def: defFromEmbedded(id, e), embed: e });
+  // 오래된 항목부터 정리(메모리 상한)
+  while (USER.size > USER_LIMIT) USER.delete(USER.keys().next().value!);
+}
+
+export function userAssets(): AssetDef[] {
+  return userRegistryEnabled ? [...USER.values()].map((u) => u.def) : [];
+}
+
+/** 현재 범위의 사용자 에셋 정의 (프롬프트 카탈로그용) */
+export function scopedUserAssets(): AssetDef[] {
+  return scope ? [...scope.values()].map((u) => u.def) : [];
+}
+
+export function embeddedFor(id: string): EmbeddedAsset | undefined {
+  return scope?.get(id)?.embed ?? (userRegistryEnabled ? USER.get(id)?.embed : undefined);
 }
 
 export function isTile(id: string) {
@@ -199,4 +286,5 @@ export const CATEGORY_LABEL: Record<AssetDef["category"], string> = {
   furniture: "가구",
   interactive: "상호작용",
   decor: "장식",
+  character: "인물",
 };

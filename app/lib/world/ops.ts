@@ -1,8 +1,9 @@
 // 선언적 맵 작업. 수동 편집과 에이전트가 같은 작업 형식을 쓴다.
 // applyOps 는 사본에서만 작업하고, 하나라도 실패하면 원본을 그대로 돌려준다.
-import { footprintOf, getAsset, isValidScale, SCALE_MAX, SCALE_MIN } from "./catalog.ts";
+import { footprintOf, getAsset, isValidScale, SCALE_MAX, SCALE_MIN, withAssetScope } from "./catalog.ts";
+import { syncEmbeddedAssets } from "./user-assets.ts";
 import { cloneMap, inBounds, objectCells, occupancy, setTile } from "./map.ts";
-import type { Interaction, MapDoc, Rot } from "./types.ts";
+import type { EmbeddedAsset, Interaction, MapDoc, Rot } from "./types.ts";
 import { validateMap, type ValidationIssue } from "./validate.ts";
 
 export type Side = "N" | "S" | "E" | "W";
@@ -422,9 +423,21 @@ export interface ApplyOptions {
   /** 에이전트 변경: 도달 불가 구역·상호작용도 오류로 처리 */
   strict?: boolean;
   maxOps?: number;
+  /** 이 요청에서 쓸 수 있는 사용자(공방) 에셋 정의 (예: actor 의 보관함). 맵에 이미 내장된 정의가 우선 */
+  extraAssets?: Record<string, EmbeddedAsset>;
+}
+
+/** 요청 범위: 보관함 정의 위에 맵 내장 정의를 덮어 맵 정의를 우선 */
+export function assetScopeFor(doc: MapDoc, extra?: Record<string, EmbeddedAsset>) {
+  if (!extra) return doc.assets;
+  return doc.assets ? { ...extra, ...doc.assets } : extra;
 }
 
 export function applyOps(source: MapDoc, ops: unknown, opts: ApplyOptions = {}): ApplyResult {
+  return withAssetScope(assetScopeFor(source, opts.extraAssets), () => applyOpsScoped(source, ops, opts));
+}
+
+function applyOpsScoped(source: MapDoc, ops: unknown, opts: ApplyOptions): ApplyResult {
   const summary = { added: 0, removed: 0, moved: 0, painted: 0, zones: 0, interactions: 0 };
   const fail = (message: string): ApplyResult => ({
     ok: false,
@@ -452,7 +465,9 @@ export function applyOps(source: MapDoc, ops: unknown, opts: ApplyOptions = {}):
       return fail(`${i + 1}번째 작업(${op.op}) 형식이 올바르지 않습니다`);
     }
   }
-  const v = validateMap(ctx.doc, { strict: opts.strict });
+  // 사용한 사용자 에셋 정의를 맵에 내장(이식·서버 검증용), 안 쓰는 정의는 제거
+  const out = syncEmbeddedAssets(ctx.doc);
+  const v = validateMap(out, { strict: opts.strict });
   if (v.errors.length) return { ok: false, doc: source, errors: v.errors, warnings: v.warnings, summary };
-  return { ok: true, doc: ctx.doc, errors: [], warnings: v.warnings, summary };
+  return { ok: true, doc: out, errors: [], warnings: v.warnings, summary };
 }

@@ -1,4 +1,4 @@
-import { getAsset, isValidScale } from "./catalog.ts";
+import { getAsset, isValidScale, withAssetScope } from "./catalog.ts";
 import { blockedGrid, cellOrNeighborReachable, inBounds, objectCells, reachableFrom } from "./map.ts";
 import { SCHEMA_VERSION, type MapDoc } from "./types.ts";
 
@@ -14,6 +14,11 @@ export interface ValidationResult {
 
 /** 맵 문서 무결성 검사. strict 이면 도달성 문제도 오류로 본다 */
 export function validateMap(doc: MapDoc, opts: { strict?: boolean } = {}): ValidationResult {
+  // 맵에 내장된 사용자 에셋 정의 범위에서 검증 (서버는 전역 레지스트리를 쓰지 않음)
+  return withAssetScope(doc.assets, () => validateScoped(doc, opts));
+}
+
+function validateScoped(doc: MapDoc, opts: { strict?: boolean }): ValidationResult {
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
   const err = (code: string, message: string) => errors.push({ code, message });

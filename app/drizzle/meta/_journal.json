@@ -1,5 +1,27 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1792500064215,
+      "tag": "0000_mighty_rogue",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792501099302,
+      "tag": "0001_grey_joseph",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792501356048,
+      "tag": "0002_certain_red_ghost",
+      "breakpoints": true
+    }
+  ]
 }

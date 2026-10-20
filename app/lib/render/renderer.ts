@@ -501,7 +501,9 @@ export class WorldRenderer {
         const west = x > 0 ? tileAt(doc, x - 1, y) : id;
         const o = proj.toScreen(x, y);
         g.setTransform(scale * ma, scale * mb, scale * mc, scale * md, (o.x - bx0) * scale, (o.y - by0) * scale);
-        drawTileUnit(g, getAsset(id), x, y, { n: north !== id, w: west !== id }, proj.id);
+        const ta = getAsset(id);
+        const tex = ta?.render.texture ? resolveSprite(ta.render.texture) : null;
+        drawTileUnit(g, ta, x, y, { n: north !== id, w: west !== id }, proj.id, tex ? { image: tex.atlas.image, ...tex.frame } : null);
       }
     }
     c = { canvas, scale, bytes: canvas.width * canvas.height * 4, ox: bx0, oy: by0 };

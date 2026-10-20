@@ -7,7 +7,9 @@ import { createRenderScheduler } from "@/lib/render/loop";
 import { WorldRenderer, type Ghost, type SceneState } from "@/lib/render/renderer";
 import { drawAssetThumb } from "@/lib/render/thumb";
 import { readView, saveView, VIEW_LABEL } from "@/lib/render/view-pref";
-import { CATALOG, CATEGORY_LABEL, footprintOf, getAsset, SCALE_MAX, SCALE_MIN } from "@/lib/world/catalog";
+import { CATALOG, CATEGORY_LABEL, footprintOf, getAsset, SCALE_MAX, SCALE_MIN, userAssets } from "@/lib/world/catalog";
+import { loadImagesFor } from "@/lib/render/user-images";
+import { registerLibrary, syncEmbeddedAssets, type LibraryLike } from "@/lib/world/user-assets";
 import { diffCells } from "@/lib/world/diff";
 import { History } from "@/lib/world/history";
 import { parseBundle, serializeProject } from "@/lib/world/bundle";
@@ -44,7 +46,7 @@ const TOOLS: Array<{ id: Tool; label: string; key: string; hint: string }> = [
   { id: "spawn", label: "시작점", key: "6", hint: "클릭해 플레이 시작 위치 지정" },
 ];
 
-const CATEGORIES = ["all", ...Object.keys(CATEGORY_LABEL)] as const;
+const CATEGORIES = ["all", "mine", ...Object.keys(CATEGORY_LABEL)] as const;
 
 function AssetThumb({ asset, ready, view }: { asset: AssetDef; ready: number; view: ViewMode }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -163,19 +165,35 @@ export default function Editor({ projectId }: { projectId: string }) {
     setViewReady(true);
   }, [projectId]);
 
-  // 시점별 아틀라스만 불러오고 다른 시점 이미지는 해제
+  // 학생이면 공방 보관함 에셋을 카탈로그에 등록 (서버가 권한 판정)
+  const [libVersion, setLibVersion] = useState(0);
+  useEffect(() => {
+    fetch("/api/workshop/library")
+      .then((r) => (r.ok ? (r.json() as Promise<{ assets: LibraryLike[] }>) : null))
+      .then((d) => {
+        if (d?.assets?.length) {
+          registerLibrary(d.assets);
+          setLibVersion((n) => n + 1);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  // 시점별 아틀라스만 불러오고 다른 시점 이미지는 해제 (사용자 에셋 그림도 현재 시점 것만)
   useEffect(() => {
     if (!viewReady) return;
     let alive = true;
-    void loadViewAtlases(view).then(() => {
+    const userIds = userAssets().map((a) => a.id);
+    void Promise.all([loadViewAtlases(view), loadImagesFor(view, userIds)]).then(() => {
       if (!alive) return;
-      rendererRef.current?.invalidateSprites();
+      rendererRef.current?.clearCaches();
+      schedRef.current?.request();
       setAtlasReady((n) => n + 1);
     });
     return () => {
       alive = false;
     };
-  }, [view, viewReady]);
+  }, [view, viewReady, libVersion]);
 
   const changeView = (v: ViewMode) => {
     setViewState(v);
@@ -223,7 +241,8 @@ export default function Editor({ projectId }: { projectId: string }) {
         flash(r.errors[0]?.message ?? "적용할 수 없어요", true);
         return false;
       }
-      return commitPs(withDoc(prev, r.doc), label);
+      // 공방 에셋을 쓰면 맵에 동작 정보를 내장(이식성), 안 쓰면 제거
+      return commitPs(withDoc(prev, syncEmbeddedAssets(r.doc)), label);
     },
     [flash, commitPs],
   );
@@ -737,8 +756,14 @@ export default function Editor({ projectId }: { projectId: string }) {
   // ---------- 파생 ----------
   const assets = useMemo(() => {
     const q = query.trim();
-    return CATALOG.filter((a) => (category === "all" || a.category === category) && (!q || a.name.includes(q) || a.tags.some((t) => t.includes(q)) || a.id.includes(q)));
-  }, [category, query]);
+    const all = [...CATALOG, ...userAssets()];
+    return all.filter(
+      (a) =>
+        (category === "all" || (category === "mine" ? a.source === "user" : a.category === category)) &&
+        (!q || a.name.includes(q) || a.tags.some((t) => t.includes(q)) || a.id.includes(q)),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, query, libVersion]);
 
   const validation = useMemo(() => (doc ? validateMap(doc) : null), [doc]);
   const projectIssues = useMemo(() => (ps ? validateProject(ps) : []), [ps]);
@@ -805,6 +830,9 @@ export default function Editor({ projectId }: { projectId: string }) {
           ))}
         </div>
         <div className="grow" />
+        <a className="btn sm ghost hide-sm" href="/workshop" target="_blank" rel="noopener" title="새 탭에서 에셋 공방 열기 (편집 중인 내용은 그대로)">
+          에셋 공방 ↗
+        </a>
         <span className={`chip ${dirty ? "coral" : "teal"}`} data-testid="save-state">
           {dirty ? "저장 안 됨" : "저장됨"}
         </span>
@@ -839,7 +867,7 @@ export default function Editor({ projectId }: { projectId: string }) {
           <div className="cat-tabs">
             {CATEGORIES.map((c) => (
               <button key={c} className={category === c ? "on" : ""} onClick={() => setCategory(c)}>
-                {c === "all" ? "전체" : CATEGORY_LABEL[c as AssetDef["category"]]}
+                {c === "all" ? "전체" : c === "mine" ? "내 에셋" : CATEGORY_LABEL[c as AssetDef["category"]]}
               </button>
             ))}
           </div>

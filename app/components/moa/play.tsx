@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { loadViewAtlases } from "@/lib/render/atlas";
+import { applyAvatarLook } from "@/lib/render/avatar-look";
+import { loadImagesFor } from "@/lib/render/user-images";
+import type { AvatarLook } from "@/lib/server/workshop/avatar";
 import { screenInputToGrid, type ViewMode } from "@/lib/render/projection";
 import { readView, saveView, VIEW_LABEL } from "@/lib/render/view-pref";
 import { QUALITY, type Quality } from "@/lib/render/constants";
@@ -69,6 +72,9 @@ export default function Play({ projectId }: { projectId: string }) {
   const [viewReady, setViewReady] = useState(false);
   const viewRef = useRef<ViewMode>("td");
   const followRef = useRef<((x: number, y: number) => { x: number; y: number }) | null>(null);
+  /** 학생 프로필 외형(없으면 기본 탐험가) */
+  const lookRef = useRef<AvatarLook | null>(null);
+  const nameRef = useRef("나");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
@@ -97,6 +103,17 @@ export default function Play({ projectId }: { projectId: string }) {
     setProject(p);
     setDoc(m);
     setQuality(readQuality());
+    // 학생이면 저장한 아바타 외형·별명 사용 (실패해도 기본 아바타로 플레이)
+    fetch("/api/workshop/me")
+      .then((r) => (r.ok ? (r.json() as Promise<{ role?: string; student?: { nickname: string; avatar: AvatarLook | null } }>) : null))
+      .then((me) => {
+        if (me?.role === "student" && me.student) {
+          nameRef.current = me.student.nickname;
+          lookRef.current = me.student.avatar;
+          applyAvatarLook(lookRef.current);
+        }
+      })
+      .catch(() => undefined);
     const v = readView();
     viewRef.current = v;
     setView(v);
@@ -206,7 +223,7 @@ export default function Play({ projectId }: { projectId: string }) {
           face8: next.face8,
           walkFrame: viewRef.current === "iso" ? walkFrame(next) : undefined,
           style: AVATAR_COLORS[0],
-          name: "나",
+          name: nameRef.current,
         },
         nearInteraction: n && !dialogRef.current ? { x: n.x, y: n.y } : null,
       });
@@ -273,8 +290,11 @@ export default function Play({ projectId }: { projectId: string }) {
     }
     if (!viewReady) return;
     let alive = true;
-    void loadViewAtlases(view).then(() => {
-      if (alive) rendererRef.current?.invalidateSprites();
+    // 맵에 내장된 공방 에셋 그림도 현재 시점 것만 (권한 없으면 도형으로 대체)
+    void Promise.all([loadViewAtlases(view), loadImagesFor(view, Object.keys(doc?.assets ?? {}))]).then(() => {
+      if (!alive) return;
+      applyAvatarLook(lookRef.current); // 시점 아틀라스를 새로 불러오면 외형 다시 적용
+      rendererRef.current?.clearCaches();
     });
     return () => {
       alive = false;

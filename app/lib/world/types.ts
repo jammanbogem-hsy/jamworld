@@ -70,6 +70,22 @@ export interface MapDoc {
   spawn: { x: number; y: number };
   /** 결정적 id 발급용 카운터 */
   nextId: number;
+  /**
+   * 맵에 쓴 사용자(공방) 에셋의 동작·이름 정보. 맵만 옮겨도 검증·충돌이 유지된다.
+   * 그림 URL 은 권한이 있을 때만 보이고, 없으면 도형으로 대체된다.
+   */
+  assets?: Record<string, EmbeddedAsset>;
+}
+
+export interface EmbeddedAsset {
+  name: string;
+  kind: "tile" | "object";
+  category: AssetDef["category"];
+  tags: string[];
+  footprint: { w: number; d: number };
+  blocking: boolean;
+  height: number;
+  views: { td?: string; iso?: string; texture?: string };
 }
 
 export interface Project {
@@ -114,7 +130,7 @@ export interface AssetDef {
   id: string;
   name: string;
   kind: "tile" | "object";
-  category: "terrain" | "nature" | "building" | "furniture" | "interactive" | "decor";
+  category: "terrain" | "nature" | "building" | "furniture" | "interactive" | "decor" | "character";
   tags: string[];
   /** 회전 0 기준 점유 셀 수 */
   footprint: { w: number; d: number };
@@ -132,6 +148,8 @@ export interface AssetDef {
   render: {
     td: ViewRender;
     iso: ViewRender;
+    /** 바닥 텍스처(정사각, 두 시점에 투영) "아틀라스:프레임" */
+    texture?: string;
     glb?: { src: string; scale?: number; offset?: [number, number, number]; rotY?: number };
   };
   source: "builtin-shape" | "codex" | "tripo" | "user";

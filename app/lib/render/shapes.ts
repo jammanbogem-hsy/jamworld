@@ -273,8 +273,25 @@ export function drawAssetShape(ctx: C, a: AssetDef, fpw: number, fpd: number) {
  * 두 시점에서 같은 색·같은 무늬가 정확히 투영된다. 셀 테두리선·잔점 없이 큰 면 위주로 칠한다.
  * edges.n / edges.w: 북쪽·서쪽 이웃 타일이 다를 때(물가 둑 등). 서쪽 둑은 아이소에서만 보인다.
  */
-export function drawTileUnit(ctx: C, a: AssetDef | undefined, cx: number, cy: number, edges: { n: boolean; w: boolean }, view: "td" | "iso") {
+export function drawTileUnit(
+  ctx: C,
+  a: AssetDef | undefined,
+  cx: number,
+  cy: number,
+  edges: { n: boolean; w: boolean },
+  view: "td" | "iso",
+  texture?: { image: CanvasImageSource; x: number; y: number; w: number; h: number } | null,
+) {
   const U = UNIT;
+  if (texture) {
+    // 공방 바닥 텍스처: 단위 정사각형에 그대로 → 시점 행렬로 두 시점에 같은 무늬 (이음선 방지로 1단위 넓게)
+    ctx.drawImage(texture.image, texture.x, texture.y, texture.w, texture.h, -1, -1, U + 2, U + 2);
+    if ((cx + cy) & 1) {
+      ctx.fillStyle = "rgba(255,255,255,0.05)";
+      ctx.fillRect(0, 0, U, U);
+    }
+    return;
+  }
   const top = a?.colors.top ?? "#6fd34a";
   const side = a?.colors.side ?? "#4cae3a";
   const id = a?.id ?? "";

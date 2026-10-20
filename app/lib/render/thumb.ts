@@ -36,7 +36,8 @@ export function drawAssetThumb(canvas: HTMLCanvasElement, assetId: string, view:
         ctx.closePath();
         ctx.clip();
         ctx.setTransform(dpr * s * ma, dpr * s * mb, dpr * s * mc, dpr * s * md, dpr * (ox + o.x * s), dpr * (oy + o.y * s));
-        drawTileUnit(ctx, a, x, y, { n: false, w: false }, view);
+        const tex = a.render.texture ? resolveSprite(a.render.texture) : null;
+        drawTileUnit(ctx, a, x, y, { n: false, w: false }, view, tex ? { image: tex.atlas.image, ...tex.frame } : null);
         ctx.restore();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }

@@ -27,6 +27,7 @@ export function cloneMap(doc: MapDoc): MapDoc {
     zones: doc.zones.map((z) => ({ ...z })),
     interactions: doc.interactions.map((i) => (i.type === "quiz" ? { ...i, choices: [...i.choices] } : { ...i })),
     spawn: { ...doc.spawn },
+    ...(doc.assets ? { assets: { ...doc.assets } } : {}),
   };
 }
 

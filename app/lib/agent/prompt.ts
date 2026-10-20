@@ -1,5 +1,7 @@
 // 모델에 보낼 맵 요약·카탈로그·도구 정의. 서버와 테스트에서 공유한다.
-import { CATALOG } from "../world/catalog.ts";
+import { CATALOG, scopedUserAssets, withAssetScope } from "../world/catalog.ts";
+import { assetScopeFor } from "../world/ops.ts";
+import type { EmbeddedAsset } from "../world/types.ts";
 import { tileAt } from "../world/map.ts";
 import { OP_NAMES } from "../world/ops.ts";
 import type { MapDoc } from "../world/types.ts";
@@ -50,8 +52,9 @@ export const TOOL_SCHEMA = {
   required: ["summary", "ops"],
 } as const;
 
+/** 내장 카탈로그 + 현재 요청 범위의 사용자 에셋(그 actor 의 보관함·맵 정의). 다른 사용자 에셋은 넣지 않는다 */
 export function catalogText() {
-  const lines = CATALOG.map((a) => {
+  const lines = [...CATALOG, ...scopedUserAssets()].map((a) => {
     const fp = `${a.footprint.w}x${a.footprint.d}`;
     const flags = a.kind === "tile" ? (a.walkable === false ? "타일,이동불가" : "타일") : a.blocking ? "막힘" : "통과";
     return `${a.id} | ${a.name} | ${fp} | ${flags} | ${a.tags.join(",")}`;
@@ -103,8 +106,8 @@ export function mapContext(doc: MapDoc) {
   ].join("\n\n");
 }
 
-export function userMessage(doc: MapDoc, request: string) {
-  return `[에셋 카탈로그]\n${catalogText()}\n\n[현재 맵]\n${mapContext(doc)}\n\n[사용자 요청]\n${request}`;
+export function userMessage(doc: MapDoc, request: string, extraAssets?: Record<string, EmbeddedAsset>) {
+  return withAssetScope(assetScopeFor(doc, extraAssets), () => `[에셋 카탈로그]\n${catalogText()}\n\n[현재 맵]\n${mapContext(doc)}\n\n[사용자 요청]\n${request}`);
 }
 
 export function repairMessage(errors: string[]) {
