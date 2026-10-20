@@ -1,3 +1,38 @@
+# 모아 월드 (Moa World)
+
+자연어·수동 편집으로 반3D(탑뷰/아이소) 맵을 만들고 바로 입장해 노는 교실용 메타버스. Sites(vinext, Cloudflare Workers) 위에서 동작한다.
+
+## 실행
+
+| 목적 | 명령 (`app/` 에서) |
+|---|---|
+| 개발 서버 | `npm run dev -- --port 5173 --strictPort` |
+| 회귀 테스트 | `node --experimental-strip-types --no-warnings --test tests/*.test.ts` |
+| 타입 검사 | `npx tsc --noEmit -p .` |
+| 빌드 | Sites 빌드 스크립트 `build-site.mjs` (또는 `npm run build`) |
+| 빌드 결과 실행 | `npm start -- --port 5174` |
+| 아틀라스 재생성 | `node scripts/build-atlas.mjs` (design/ 원본 → `public/assets/atlas`) |
+
+서버 키는 `app/.dev.vars`(git 제외)에 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` 를 둔다. 값은 코드·로그·브라우저 번들에 넣지 않는다.
+
+## 기능 요약 (체크포인트 A)
+
+- **페이지(맵) 탭**: 하단 탭에서 추가·이름 변경(더블클릭)·복제·순서 변경·삭제·목록. 모든 페이지 작업은 되돌리기 가능.
+- **포털 2단계**:
+  - 1단계 클릭: 시작 포털·라벨·연결선이 보이고 안내는 오른쪽 패널에 나온다.
+  - 2단계 클릭(같은 페이지 또는 다른 페이지 탭): 양방향 한 쌍을 한 번에 확정한다.
+  - Esc·도구 변경은 취소이고, 커밋 전에는 맵에 아무것도 남지 않는다. 한쪽을 지우면 짝도 정리한다.
+- **배치 크기**: 0.5~3배. 점유 칸 = `ceil(기본 칸 × 배율)` 이고 충돌·검증과 같다(그림은 점유 칸 안). 상호작용 오브젝트는 1배 고정.
+- **플레이**:
+  - 페이지 간 포털은 같은 화면에서 전환하고(퀴즈 점수 유지), 도착 포털 옆에 나타난다.
+  - 쿨다운이 있고, 포털 칸을 벗어나야 다시 발동한다.
+- **아이소 이동**: 화면 속도 일정, 실제 이동 기준 8방향, 이동 거리 기준 걷기 프레임, 막히면 대기. 탑뷰는 기존 방식.
+- **저장**: 브라우저 localStorage 에 프로젝트 단위로 저장한다. 여러 키의 되돌리기는 best-effort 다(진짜 원자 저장은 서버 저장 전환 시).
+
+데이터 구조: `lib/world`(맵·작업·검증·프로젝트·이동), `lib/render`(투영·렌더러·아틀라스), `lib/agent`(자연어 에이전트), `lib/server/workshop`(에셋 공방, 진행 중).
+
+---
+
 # vinext-starter
 
 A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.

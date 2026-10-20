@@ -37,11 +37,25 @@ for (const view of ["td", "iso"]) {
   for (const [sheet, names] of Object.entries(SHEETS)) {
     JOBS.push({ name: `${view}-${sheet}`, src: `v2/${view}-${sheet}.png`, cell: 256, slice: "components", uniform: false, names });
   }
-  JOBS.push({ name: `${view}-avatar`, src: `v2/${view}-avatar.png`, cell: 160, slice: "components", uniform: true, names: view === "td" ? AVATAR_TD : AVATAR_ISO });
+  // 아이소 아바타는 v3 8방향(32프레임) 시트가 있으면 우선, 탑뷰는 v2 그대로
+  const v3 = view === "iso" && existsSync(resolve(DESIGN, "v3/iso-avatar-8dir.png"));
+  JOBS.push(
+    v3
+      ? { name: "iso-avatar", src: "v3/iso-avatar-8dir.png", cell: 160, slice: "components", uniform: true, names: AVATAR_ISO }
+      : { name: `${view}-avatar`, src: `v2/${view}-avatar.png`, cell: 160, slice: "components", uniform: true, names: view === "td" ? AVATAR_TD : AVATAR_ISO },
+  );
 }
 
-const manifestPath = resolve(DESIGN, "v2/manifest.json");
-const manifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : null;
+/** 원본 폴더(v2/v3)별 manifest */
+const manifests = new Map();
+function manifestFor(src) {
+  const dir = src.includes("/") ? src.slice(0, src.lastIndexOf("/")) : "";
+  if (!manifests.has(dir)) {
+    const p = resolve(DESIGN, dir, "manifest.json");
+    manifests.set(dir, existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null);
+  }
+  return manifests.get(dir);
+}
 
 for (const job of JOBS) {
   const src = resolve(DESIGN, job.src);
@@ -52,8 +66,21 @@ for (const job of JOBS) {
   await buildAtlas(job, src);
 }
 
-function manifestRects(file, names) {
-  const sheet = manifest?.sheets?.find((s) => s.file === file || s.file?.endsWith(`/${file}`));
+/** manifest 의 프레임 이름 목록 (아바타 8방향처럼 기본 목록과 다를 수 있음) */
+function sheetOf(src) {
+  const m = manifestFor(src);
+  const file = src.split("/").pop();
+  const sheets = m?.sheets ?? (m?.file ? [m] : []);
+  return sheets.find((s) => s.file === file || s.file?.endsWith(`/${file}`));
+}
+
+function manifestNames(src) {
+  const sheet = sheetOf(src);
+  return sheet?.frames?.every((f) => f.name && Array.isArray(f.rect)) ? sheet.frames.map((f) => f.name) : null;
+}
+
+function manifestRects(src, names) {
+  const sheet = sheetOf(src);
   if (!sheet?.frames) return null;
   const rects = names.map((n) => sheet.frames.find((f) => f.name === n || `${f.assetId}` === n)?.rect);
   return rects.every((r) => Array.isArray(r) && r.length === 4) ? rects.map(([x, y, w, h]) => ({ x0: x, y0: y, x1: x + w - 1, y1: y + h - 1 })) : null;
@@ -136,8 +163,26 @@ function gridRects(data, W, H, n) {
   return rects;
 }
 
+/** 상체(위쪽 55%) 불투명 픽셀의 가로 무게중심: 걷기 프레임마다 다리 폭이 달라도 몸통이 흔들리지 않게 */
+function torsoCenterX(data, W, b) {
+  const yEnd = b.y0 + Math.round((b.y1 - b.y0) * 0.55);
+  let sum = 0;
+  let n = 0;
+  for (let y = b.y0; y <= yEnd; y++) {
+    for (let x = b.x0; x <= b.x1; x++) {
+      if (data[(y * W + x) * 4 + 3] >= COMP_ALPHA) {
+        sum += x;
+        n++;
+      }
+    }
+  }
+  return n ? sum / n : (b.x0 + b.x1) / 2;
+}
+
 async function buildAtlas(job, src) {
-  const { name, cell: CELL, uniform, names: NAMES, slice } = job;
+  const { name, cell: CELL, uniform, slice } = job;
+  const fromManifest = slice === "components" ? manifestNames(job.src) : null;
+  const NAMES = fromManifest ?? job.names;
   const { data, info } = await sharp(src).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const W = info.width;
   const H = info.height;
@@ -145,7 +190,7 @@ async function buildAtlas(job, src) {
   let how;
   try {
     if (slice === "components") {
-      rects = manifestRects(job.src.split("/").pop(), NAMES);
+      rects = manifestRects(job.src, NAMES);
       how = rects ? "manifest rect" : "연결 컴포넌트";
       rects ??= componentRects(data, W, H, NAMES.length);
     } else {
@@ -166,7 +211,7 @@ async function buildAtlas(job, src) {
     const b = rects[i];
     const bw = uniform ? maxW : b.x1 - b.x0 + 1;
     const bh = uniform ? maxH : b.y1 - b.y0 + 1;
-    const sx = uniform ? Math.round((b.x0 + b.x1) / 2 - bw / 2) : b.x0;
+    const sx = uniform ? Math.round(torsoCenterX(data, W, b) - bw / 2) : b.x0;
     const sy = uniform ? b.y1 + 1 - bh : b.y0;
     const lim = b.cell ?? (slice === "components" && uniform ? b : null); // 다른 그림이 섞이지 않게
     const crop = Buffer.alloc(bw * bh * 4);

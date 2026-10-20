@@ -27,6 +27,10 @@ export interface PlayerView {
   y: number;
   dir: number; // 격자 기준 0 남, 1 서, 2 북, 3 동
   moving: boolean;
+  /** 아이소 화면 8방향 0 남 … 7 남동 (없으면 dir 로 계산) */
+  face8?: number;
+  /** 걷기 프레임 0~3 (없으면 시간 기준 10fps) */
+  walkFrame?: number;
   style: AvatarStyle;
   name: string;
 }
@@ -37,6 +41,7 @@ export interface Ghost {
   y: number;
   rot: Rot;
   valid: boolean;
+  scale?: number;
 }
 
 export interface SceneState {
@@ -51,6 +56,12 @@ export interface SceneState {
   highlight?: { added: Set<string>; removed: Set<string> } | null;
   nearInteraction?: { x: number; y: number } | null;
   xray?: boolean;
+  /** 포털 두 단계 설치: 1단계에서 찍은 시작 포털(이 페이지에 있을 때) */
+  pendingPortal?: { x: number; y: number; label: string } | null;
+  /** 시작 포털 → 커서 연결선 (같은 페이지) */
+  portalLink?: { from: { x: number; y: number }; to: { x: number; y: number } } | null;
+  /** 편집 화면 포털 도착 라벨 */
+  portalTags?: Array<{ x: number; y: number; text: string }>;
 }
 
 export interface RenderStats {
@@ -171,7 +182,7 @@ export class WorldRenderer {
     for (const o of doc.objects) {
       const a = getAsset(o.assetId);
       if (!a) continue;
-      const fp = footprintOf(a, o.rot);
+      const fp = footprintOf(a, o.rot, o.scale ?? 1);
       list.push({ o, a, fw: fp.w, fd: fp.d, key: this.proj.depthKey(o.x, o.y, fp.w, fp.d) });
     }
     list.sort((p, q) => p.key - q.key);
@@ -284,13 +295,13 @@ export class WorldRenderer {
     const ground = this.screenToWorld(sx, sy);
     for (let i = this.sorted.length - 1; i >= 0; i--) {
       const { o, a, fw, fd } = this.sorted[i];
-      const b = this.proj.footprintBox(fw, fd, a.height + 0.25);
+      const b = this.proj.footprintBox(fw, fd, a.height * (o.scale ?? 1) + 0.25);
       const p = this.worldToScreen(o.x, o.y);
       if (sx < p.x + b.x0 * zoom - 6 || sx > p.x + b.x1 * zoom + 6 || sy < p.y + b.y0 * zoom || sy > p.y + b.y1 * zoom) continue;
       if (this.proj.id === "iso") {
         // 아이소: 상자 귀퉁이의 빈 곳은 제외. 바닥 위이거나, 높이 부분(바닥에서 위로 올린 지점)이 footprint 근처일 때만
         const onFoot = ground.x >= o.x && ground.x <= o.x + fw && ground.y >= o.y && ground.y <= o.y + fd;
-        const lifted = this.screenToWorld(sx, sy + a.height * HU * zoom * 0.6);
+        const lifted = this.screenToWorld(sx, sy + a.height * (o.scale ?? 1) * HU * zoom * 0.6);
         const near = lifted.x >= o.x - 0.5 && lifted.x <= o.x + fw + 0.5 && lifted.y >= o.y - 0.5 && lifted.y <= o.y + fd + 0.5;
         if (!onFoot && !near) continue;
       }
@@ -359,19 +370,29 @@ export class WorldRenderer {
     const player = scene.player;
     const pKey = player ? proj.playerDepth(player.x, player.y) : Infinity;
     let playerDrawn = false;
+    const vw = this.viewW;
+    const vh = this.viewH;
     for (const s of this.sorted) {
       const { o, a, fw, fd } = s;
-      if (o.x + fw - 1 < x0 || o.x > x1 || o.y + fd - 1 < y0 || o.y > y1) continue;
+      // 배율·높이를 반영한 화면 상자로 컬링 (높은 집·나무 윗부분만 보여도 그린다)
+      const k = o.scale ?? 1;
+      const fb = proj.footprintBox(fw, fd, a.height * k + 0.6);
+      const over = (fb.x1 - fb.x0) * 0.35 + 8; // 스프라이트가 footprint 보다 넓은 만큼 여유
+      const op = this.worldToScreen(o.x, o.y);
+      if (op.x + (fb.x1 + over) * zoom < 0 || op.x + (fb.x0 - over) * zoom > vw || op.y + fb.y1 * zoom + 8 < 0 || op.y + (fb.y0 - 24) * zoom > vh) continue;
       if (player && !playerDrawn && s.key > pKey) {
         this.drawPlayer(player, scene.time);
         playerDrawn = true;
       }
       let alpha = scene.xray ? 0.45 : 1;
-      if (player && s.key > pKey && a.height >= 0.9 && this.occludes(o, a, fw, fd, player)) alpha = 0.42;
+      if (player && s.key > pKey && a.height * (o.scale ?? 1) >= 0.9 && this.occludes(o, a, fw, fd, player)) alpha = 0.42;
       this.drawObject(o, alpha, scene.selectedId === o.id);
     }
     if (player && !playerDrawn) this.drawPlayer(player, scene.time);
 
+    if (scene.portalTags) for (const t of scene.portalTags) this.drawTag(t.x, t.y, t.text, "#2b3a67");
+    if (scene.pendingPortal) this.drawPending(scene.pendingPortal, scene.time);
+    if (scene.portalLink) this.drawLink(scene.portalLink.from, scene.portalLink.to);
     if (scene.ghost) this.drawGhost(scene.ghost);
     if (scene.hoverCell && !scene.ghost) this.drawCellOutline(scene.hoverCell, "rgba(25,194,181,0.95)");
     if (scene.nearInteraction) this.drawBubble(scene.nearInteraction, scene.time);
@@ -386,7 +407,7 @@ export class WorldRenderer {
   /** 플레이어 화면 상자와 겹치는 앞쪽 높은 오브젝트인가 */
   private occludes(o: PlacedObject, a: AssetDef, fw: number, fd: number, p: PlayerView) {
     const z = this.camera.zoom;
-    const ob = this.proj.footprintBox(fw, fd, a.height);
+    const ob = this.proj.footprintBox(fw, fd, a.height * (o.scale ?? 1));
     const op = this.worldToScreen(o.x, o.y);
     const pp = this.worldToScreen(p.x, p.y);
     const px0 = pp.x - 18 * z;
@@ -594,10 +615,11 @@ export class WorldRenderer {
     if (!s) return;
     const ctx = this.ctx;
     const { zoom } = this.camera;
+    const k = o.scale ?? 1;
     const p = this.worldToScreen(o.x, o.y);
     if (selected) {
       const a = getAsset(o.assetId)!;
-      const fp = footprintOf(a, o.rot);
+      const fp = footprintOf(a, o.rot, k);
       this.cellPolygon(o.x, o.y, fp.w, fp.d);
       ctx.fillStyle = "rgba(255,111,97,0.28)";
       ctx.fill();
@@ -606,9 +628,70 @@ export class WorldRenderer {
       ctx.stroke();
     }
     if (alpha < 1) ctx.globalAlpha = alpha;
-    ctx.drawImage(s.canvas, p.x - s.ox * zoom, p.y - s.oy * zoom, s.w * zoom, s.h * zoom);
+    if (k === 1) {
+      ctx.drawImage(s.canvas, p.x - s.ox * zoom, p.y - s.oy * zoom, s.w * zoom, s.h * zoom);
+    } else {
+      // 배율: 기본 크기 스프라이트를 바닥 중심 기준으로 확대/축소해 점유 칸 중심에 맞춘다 (캐시는 기본 크기 하나만)
+      const a = getAsset(o.assetId)!;
+      const base = footprintOf(a, o.rot);
+      const fp = footprintOf(a, o.rot, k);
+      const anchor = this.proj.toScreen(base.w / 2, base.d / 2);
+      const target = this.worldToScreen(o.x + fp.w / 2, o.y + fp.d / 2);
+      ctx.drawImage(s.canvas, target.x - (s.ox + anchor.x) * k * zoom, target.y - (s.oy + anchor.y) * k * zoom, s.w * k * zoom, s.h * k * zoom);
+    }
     if (alpha < 1) ctx.globalAlpha = 1;
     this.stats.objectsDrawn++;
+  }
+
+  /** 1단계에서 찍은 시작 포털: 실제 포털 그림 + 맥동 테두리 + "시작" 라벨 */
+  private drawPending(pp: { x: number; y: number; label: string }, t: number) {
+    const ctx = this.ctx;
+    const pulse = 0.55 + 0.45 * Math.abs(Math.sin(t * 3));
+    this.cellPolygon(pp.x - 0.15, pp.y - 0.15, 1.3, 1.3);
+    ctx.fillStyle = `rgba(255,111,97,${0.18 + 0.12 * pulse})`;
+    ctx.fill();
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = "#ff6f61";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    this.drawObject({ id: "__pending", assetId: "act.portal", x: pp.x, y: pp.y, rot: 0 }, 0.9, false);
+    this.stats.objectsDrawn--;
+    this.drawTag(pp.x, pp.y, pp.label, "#ff6f61", 1.6);
+  }
+
+  private drawLink(a: { x: number; y: number }, b: { x: number; y: number }) {
+    const ctx = this.ctx;
+    const p = this.worldToScreen(a.x + 0.5, a.y + 0.5);
+    const q = this.worldToScreen(b.x + 0.5, b.y + 0.5);
+    ctx.save();
+    ctx.setLineDash([10, 7]);
+    ctx.strokeStyle = "rgba(255,111,97,0.9)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(q.x, q.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** 셀 위에 띄우는 작은 라벨 */
+  private drawTag(x: number, y: number, text: string, color: string, z = 1.2) {
+    const ctx = this.ctx;
+    const p = this.worldToScreen(x + 0.5, y + 0.5, z);
+    ctx.font = "bold 12px system-ui, sans-serif";
+    const tw = ctx.measureText(text).width + 14;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(p.x - tw / 2, p.y - 22, tw, 20, 10);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, p.x, p.y - 12);
   }
 
   private drawPlayer(p: PlayerView, t: number) {
@@ -623,11 +706,17 @@ export class WorldRenderer {
     // 시점별 아바타: 탑뷰 행 s/w/n/e, 아이소 행 se/sw/nw/ne. 0=대기, 1~3=걷기 (10fps, 1-2-3-2)
     // 격자 방향 → 아이소 화면 방향: 남(+y)=남서, 서=북서, 북=북동, 동=남동
     const walk = [1, 2, 3, 2][Math.floor(t * 10) % 4];
-    const frameNo = p.moving ? walk : 0;
-    const sprite =
-      this.proj.id === "iso"
-        ? resolveSprite(`iso-avatar:${["sw", "nw", "ne", "se"][p.dir] ?? "sw"}${frameNo}`)
-        : (resolveSprite(`td-avatar:${"swne"[p.dir] ?? "s"}${frameNo}`) ?? resolveSprite(`avatar:${"swne"[p.dir] ?? "s"}${frameNo}`));
+    const frameNo = p.walkFrame ?? (p.moving ? walk : 0);
+    let sprite;
+    if (this.proj.id === "iso") {
+      // 8방향 시트 우선, 없으면 기존 4대각 시트의 가까운 방향
+      const d8 = p.face8 ?? [1, 3, 5, 7][p.dir] ?? 1;
+      const name8 = ["s", "sw", "w", "nw", "n", "ne", "e", "se"][d8];
+      const near4 = ["sw", "sw", "nw", "nw", "ne", "ne", "se", "se"][d8];
+      sprite = resolveSprite(`iso-avatar:${name8}${frameNo}`) ?? resolveSprite(`iso-avatar:${near4}${frameNo}`);
+    } else {
+      sprite = resolveSprite(`td-avatar:${"swne"[p.dir] ?? "s"}${frameNo}`) ?? resolveSprite(`avatar:${"swne"[p.dir] ?? "s"}${frameNo}`);
+    }
     ctx.fillStyle = "rgba(24,28,58,0.25)";
     ctx.beginPath();
     ctx.ellipse(0, -2, 20, 8, 0, 0, Math.PI * 2);
@@ -706,11 +795,11 @@ export class WorldRenderer {
       this.drawCellOutline({ x: g.x, y: g.y }, "#19c2b5");
       return;
     }
-    const fp = footprintOf(a, g.rot);
+    const fp = footprintOf(a, g.rot, g.scale ?? 1);
     this.cellPolygon(g.x, g.y, fp.w, fp.d);
     ctx.fillStyle = g.valid ? "rgba(25,194,181,0.28)" : "rgba(255,80,80,0.35)";
     ctx.fill();
-    this.drawObject({ id: "__ghost", assetId: g.assetId, x: g.x, y: g.y, rot: g.rot }, 0.65, false);
+    this.drawObject({ id: "__ghost", assetId: g.assetId, x: g.x, y: g.y, rot: g.rot, scale: g.scale }, 0.65, false);
     this.stats.objectsDrawn--;
   }
 

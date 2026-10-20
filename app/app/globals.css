@@ -891,3 +891,176 @@ a {
     display: none !important;
   }
 }
+
+/* ---------- 페이지 탭 / 포털 2단계 ---------- */
+.page-tabs {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  background: rgb(255 255 255 / 96%);
+  border-top: 1px solid var(--line);
+  z-index: 3;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.page-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  flex: none;
+}
+.page-tab.on {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+.page-tab.pending {
+  box-shadow: 0 0 0 2px var(--coral);
+}
+.page-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  border: none;
+  background: none;
+  padding: 0 4px 0 8px;
+  font-weight: 700;
+  font-size: 13px;
+  color: inherit;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.page-no {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 10%);
+  font-size: 11px;
+}
+.page-tab.on .page-no {
+  background: rgb(255 255 255 / 22%);
+}
+.page-portal {
+  font-size: 11px;
+  color: var(--coral);
+  font-weight: 800;
+}
+.page-more {
+  border: none;
+  background: none;
+  width: 24px;
+  height: 100%;
+  color: inherit;
+  opacity: 0.7;
+}
+.page-menu,
+.page-list {
+  position: absolute;
+  bottom: 40px;
+  min-width: 160px;
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+.page-menu {
+  left: 0;
+}
+.page-list {
+  position: fixed;
+  bottom: 48px;
+  max-height: 50vh;
+  overflow-y: auto;
+  min-width: 240px;
+}
+.page-menu button,
+.page-list button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.page-menu button:hover:not(:disabled),
+.page-list button:hover,
+.page-list button.on {
+  background: var(--panel-2);
+}
+.page-menu button:disabled {
+  opacity: 0.4;
+}
+.page-menu .danger {
+  color: var(--danger);
+}
+.page-add,
+.page-list-btn {
+  height: 32px;
+  border-radius: 9px;
+  border: 1px dashed #b7c2d6;
+  background: #fff;
+  padding: 0 12px;
+  font-weight: 700;
+  flex: none;
+}
+.page-rename {
+  height: 28px;
+  width: 140px;
+  margin: 0 4px;
+  border-radius: 7px;
+  border: 1px solid var(--teal);
+  padding: 0 6px;
+  color: var(--ink);
+}
+.ed-center .hint {
+  bottom: 56px;
+}
+.canvas-hud {
+  bottom: 56px !important;
+}
+.portal-banner {
+  /* 오른쪽 패널 맨 위 고정: 캔버스(시작 포털)를 가리지 않는다 */
+  display: flex;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 10px 12px;
+  background: #fff7f5;
+  border-bottom: 2px solid var(--coral);
+  font-size: 13px;
+  line-height: 1.5;
+  flex-wrap: wrap;
+  flex: none;
+}
+.tool-select {
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 0 6px;
+}

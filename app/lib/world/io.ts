@@ -52,6 +52,11 @@ function rot(v: unknown, where: string): Rot {
   return r;
 }
 
+function scaleOf(v: unknown, where: string): number {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0.5 || v > 3) throw new SchemaError(`${where}: 크기 배율은 0.5~3 이어야 합니다`);
+  return Math.round(v * 100) / 100;
+}
+
 function sanitizeInteraction(v: unknown, where: string): Interaction {
   const o = obj(v, where);
   const base = { id: str(o.id, `${where}.id`, 64), x: int(o.x, `${where}.x`), y: int(o.y, `${where}.y`) };
@@ -102,6 +107,7 @@ export function sanitizeMap(raw: unknown): MapDoc {
       x: int(o.x, `objects[${i}].x`),
       y: int(o.y, `objects[${i}].y`),
       rot: rot(o.rot, `objects[${i}].rot`),
+      ...(o.scale === undefined || o.scale === 1 ? {} : { scale: scaleOf(o.scale, `objects[${i}].scale`) }),
     };
   });
   const zones: Zone[] = arr(r.zones ?? [], "zones", IO_LIMITS.maxZones).map((v, i) => {

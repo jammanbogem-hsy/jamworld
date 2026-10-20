@@ -1,4 +1,4 @@
-import { getAsset } from "./catalog.ts";
+import { getAsset, isValidScale } from "./catalog.ts";
 import { blockedGrid, cellOrNeighborReachable, inBounds, objectCells, reachableFrom } from "./map.ts";
 import { SCHEMA_VERSION, type MapDoc } from "./types.ts";
 
@@ -46,6 +46,8 @@ export function validateMap(doc: MapDoc, opts: { strict?: boolean } = {}): Valid
       continue;
     }
     if (![0, 90, 180, 270].includes(o.rot)) err("rot", `${a.name}(${o.id}) 회전값이 올바르지 않습니다`);
+    if (o.scale !== undefined && !isValidScale(o.scale)) err("scale", `${a.name}(${o.id}) 크기 배율이 범위를 벗어났습니다`);
+    if (o.scale !== undefined && o.scale !== 1 && a.interaction) err("scale", `${a.name}(${o.id}) 상호작용 오브젝트는 1배여야 합니다`);
     for (const [x, y] of objectCells(o)) {
       if (!inBounds(doc, x, y)) {
         err("bounds", `${a.name}(${o.id}) 가 맵 경계를 벗어납니다`);
@@ -83,7 +85,7 @@ export function validateMap(doc: MapDoc, opts: { strict?: boolean } = {}): Valid
       continue;
     }
     if (i.type === "portal") {
-      if (i.targetId) {
+      if (i.targetId && !i.targetMapId) {
         const t = iids.get(i.targetId);
         if (!t || t.type !== "portal") err("portal", `포털 ${i.id} 의 도착 포털 ${i.targetId} 가 없습니다`);
       } else if (!i.targetMapId) {

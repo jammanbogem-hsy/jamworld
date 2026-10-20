@@ -1,6 +1,6 @@
 // 선언적 맵 작업. 수동 편집과 에이전트가 같은 작업 형식을 쓴다.
 // applyOps 는 사본에서만 작업하고, 하나라도 실패하면 원본을 그대로 돌려준다.
-import { footprintOf, getAsset } from "./catalog.ts";
+import { footprintOf, getAsset, isValidScale, SCALE_MAX, SCALE_MIN } from "./catalog.ts";
 import { cloneMap, inBounds, objectCells, occupancy, setTile } from "./map.ts";
 import type { Interaction, MapDoc, Rot } from "./types.ts";
 import { validateMap, type ValidationIssue } from "./validate.ts";
@@ -8,7 +8,8 @@ import { validateMap, type ValidationIssue } from "./validate.ts";
 export type Side = "N" | "S" | "E" | "W";
 
 export type MapOp =
-  | { op: "place"; assetId: string; x: number; y: number; rot?: Rot }
+  | { op: "place"; assetId: string; x: number; y: number; rot?: Rot; scale?: number }
+  | { op: "scale"; id: string; scale: number }
   | { op: "remove"; id: string }
   | { op: "move"; id: string; x: number; y: number }
   | { op: "rotate"; id: string; rot: Rot }
@@ -32,6 +33,8 @@ export type MapOp =
   | { op: "sign"; x: number; y: number; text: string }
   | { op: "quiz"; x: number; y: number; question: string; choices: string[]; answer: number }
   | { op: "portalPair"; a: { x: number; y: number }; b: { x: number; y: number }; label?: string }
+  /** 다른 페이지(맵)로 가는 포털 한쪽. 짝은 상대 맵에 같은 작업으로 만든다(프로젝트 단위 원자 적용) */
+  | { op: "portalTo"; x: number; y: number; id: string; targetMapId: string; targetId: string; label?: string }
   | { op: "removeInteraction"; id: string }
   | {
       op: "editInteraction";
@@ -46,7 +49,7 @@ export type MapOp =
   | { op: "setSpawn"; x: number; y: number };
 
 export const OP_NAMES: MapOp["op"][] = [
-  "place", "remove", "move", "rotate", "paint", "clearRect", "line", "scatter", "room",
+  "place", "scale", "portalTo", "remove", "move", "rotate", "paint", "clearRect", "line", "scatter", "room",
   "zone", "removeZone", "sign", "quiz", "portalPair", "removeInteraction", "editInteraction", "setSpawn",
 ];
 
@@ -89,11 +92,14 @@ function rebuildOcc(ctx: Ctx) {
   ctx.occ = occupancy(ctx.doc);
 }
 
-function canPlace(ctx: Ctx, assetId: string, x: number, y: number, rot: Rot, ignoreId?: string): string | null {
+function canPlace(ctx: Ctx, assetId: string, x: number, y: number, rot: Rot, ignoreId?: string, scale = 1): string | null {
   const a = getAsset(assetId);
   if (!a) return `카탈로그에 없는 에셋입니다: ${assetId}`;
   if (a.kind !== "object") return `${assetId} 는 바닥 타일입니다. paint 를 사용하세요`;
-  const fp = footprintOf(a, rot);
+  if (!isValidScale(scale)) return `크기 배율은 ${SCALE_MIN}~${SCALE_MAX} 사이여야 합니다`;
+  // 상호작용(포털·안내판·퀴즈)은 밟는 칸·접근 거리 판정과 맞추기 위해 1배 고정
+  if (a.interaction && scale !== 1) return `${a.name} 같은 상호작용 오브젝트는 크기를 바꿀 수 없어요`;
+  const fp = footprintOf(a, rot, scale);
   for (let dy = 0; dy < fp.d; dy++) {
     for (let dx = 0; dx < fp.w; dx++) {
       const cx = x + dx;
@@ -108,14 +114,15 @@ function canPlace(ctx: Ctx, assetId: string, x: number, y: number, rot: Rot, ign
   return null;
 }
 
-function place(ctx: Ctx, assetId: string, x: number, y: number, rot: Rot = 0, strict = true): string | null {
-  const err = canPlace(ctx, assetId, x, y, rot);
+function place(ctx: Ctx, assetId: string, x: number, y: number, rot: Rot = 0, strict = true, scale = 1): string | null {
+  const err = canPlace(ctx, assetId, x, y, rot, undefined, scale);
   if (err) {
     if (strict) throw new OpError(err);
     return null;
   }
   const id = newId(ctx.doc, "o");
-  ctx.doc.objects.push({ id, assetId, x, y, rot });
+  const s = Math.round(scale * 100) / 100;
+  ctx.doc.objects.push(s === 1 ? { id, assetId, x, y, rot } : { id, assetId, x, y, rot, scale: s });
   const idx = ctx.doc.objects.length;
   for (const [cx, cy] of objectCells(ctx.doc.objects[idx - 1])) ctx.occ[cy * ctx.doc.width + cx] = idx;
   ctx.summary.added++;
@@ -153,7 +160,30 @@ function applyOne(ctx: Ctx, op: MapOp) {
   const doc = ctx.doc;
   switch (op.op) {
     case "place": {
-      place(ctx, op.assetId, int(op.x, "x"), int(op.y, "y"), (op.rot ?? 0) as Rot);
+      place(ctx, op.assetId, int(op.x, "x"), int(op.y, "y"), (op.rot ?? 0) as Rot, true, op.scale ?? 1);
+      return;
+    }
+    case "scale": {
+      const o = doc.objects.find((x) => x.id === op.id);
+      if (!o) throw new OpError(`오브젝트 ${op.id} 를 찾을 수 없습니다`);
+      const err = canPlace(ctx, o.assetId, o.x, o.y, o.rot, o.id, op.scale);
+      if (err) throw new OpError(err);
+      const s = Math.round(op.scale * 100) / 100;
+      if (s === 1) delete o.scale;
+      else o.scale = s;
+      rebuildOcc(ctx);
+      return;
+    }
+    case "portalTo": {
+      const x = int(op.x, "x");
+      const y = int(op.y, "y");
+      const id = String(op.id ?? "");
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new OpError("포털 id 형식이 올바르지 않습니다");
+      if (doc.interactions.some((i) => i.id === id)) throw new OpError(`이미 있는 상호작용 id 입니다: ${id}`);
+      if (!op.targetMapId || !op.targetId) throw new OpError("도착 페이지와 도착 포털이 필요합니다");
+      place(ctx, "act.portal", x, y);
+      doc.interactions.push({ id, type: "portal", x, y, targetMapId: String(op.targetMapId), targetId: String(op.targetId), label: op.label });
+      ctx.summary.interactions++;
       return;
     }
     case "remove": {
@@ -172,7 +202,7 @@ function applyOne(ctx: Ctx, op: MapOp) {
       if (!o) throw new OpError(`오브젝트 ${op.id} 를 찾을 수 없습니다`);
       const x = int(op.x, "x");
       const y = int(op.y, "y");
-      const err = canPlace(ctx, o.assetId, x, y, o.rot, o.id);
+      const err = canPlace(ctx, o.assetId, x, y, o.rot, o.id, o.scale ?? 1);
       if (err) throw new OpError(err);
       for (const i of doc.interactions) {
         if (i.x === o.x && i.y === o.y) {
@@ -190,7 +220,7 @@ function applyOne(ctx: Ctx, op: MapOp) {
       const o = doc.objects.find((x) => x.id === op.id);
       if (!o) throw new OpError(`오브젝트 ${op.id} 를 찾을 수 없습니다`);
       if (![0, 90, 180, 270].includes(op.rot)) throw new OpError("회전은 0/90/180/270 만 가능합니다");
-      const err = canPlace(ctx, o.assetId, o.x, o.y, op.rot, o.id);
+      const err = canPlace(ctx, o.assetId, o.x, o.y, op.rot, o.id, o.scale ?? 1);
       if (err) throw new OpError(err);
       o.rot = op.rot;
       rebuildOcc(ctx);

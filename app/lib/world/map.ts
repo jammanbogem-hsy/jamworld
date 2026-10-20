@@ -47,10 +47,15 @@ export function setTile(doc: MapDoc, x: number, y: number, tileId: string) {
   doc.terrain[y * doc.width + x] = idx;
 }
 
+export function objectFootprint(o: PlacedObject) {
+  const a = getAsset(o.assetId);
+  return a ? footprintOf(a, o.rot, o.scale ?? 1) : { w: 1, d: 1 };
+}
+
 export function objectCells(o: PlacedObject): Array<[number, number]> {
   const a = getAsset(o.assetId);
   if (!a) return [[o.x, o.y]];
-  const fp = footprintOf(a, o.rot);
+  const fp = footprintOf(a, o.rot, o.scale ?? 1);
   const cells: Array<[number, number]> = [];
   for (let dy = 0; dy < fp.d; dy++) for (let dx = 0; dx < fp.w; dx++) cells.push([o.x + dx, o.y + dy]);
   return cells;

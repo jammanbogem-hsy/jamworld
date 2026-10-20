@@ -10,6 +10,8 @@ export interface PlacedObject {
   x: number;
   y: number;
   rot: Rot;
+  /** 크기 배율 0.5~3 (없으면 1). 점유 칸 = max(1, round(기본 칸 × 배율)), 충돌은 점유 칸과 같다 */
+  scale?: number;
 }
 
 export interface Zone {
@@ -44,9 +46,9 @@ export interface PortalInteraction {
   type: "portal";
   x: number;
   y: number;
-  /** 같은 맵의 다른 포털 id */
+  /** 도착 포털 id. targetMapId 가 없으면 같은 맵, 있으면 그 맵 안의 포털 */
   targetId?: string;
-  /** 같은 프로젝트의 다른 맵 id (그 맵의 시작점으로 이동) */
+  /** 같은 프로젝트의 다른 맵(페이지) id. targetId 가 없으면 그 맵의 시작점으로 이동 */
   targetMapId?: string;
   label?: string;
 }

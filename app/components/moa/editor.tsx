@@ -7,13 +7,28 @@ import { createRenderScheduler } from "@/lib/render/loop";
 import { WorldRenderer, type Ghost, type SceneState } from "@/lib/render/renderer";
 import { drawAssetThumb } from "@/lib/render/thumb";
 import { readView, saveView, VIEW_LABEL } from "@/lib/render/view-pref";
-import { CATALOG, CATEGORY_LABEL, footprintOf, getAsset } from "@/lib/world/catalog";
+import { CATALOG, CATEGORY_LABEL, footprintOf, getAsset, SCALE_MAX, SCALE_MIN } from "@/lib/world/catalog";
 import { diffCells } from "@/lib/world/diff";
 import { History } from "@/lib/world/history";
-import { parseMapJson, serializeMap } from "@/lib/world/io";
+import { parseBundle, serializeProject } from "@/lib/world/bundle";
+import { serializeMap } from "@/lib/world/io";
 import { inBounds, objectCells, occupancy } from "@/lib/world/map";
 import { applyOps, type MapOp } from "@/lib/world/ops";
-import { addMapToProject, getProject, loadMap, saveMap, saveProject, type TemplateKey } from "@/lib/world/storage";
+import {
+  addPage,
+  cleanupOrphanPortals,
+  deletePage,
+  duplicatePage,
+  incomingPortals,
+  linkPortals,
+  movePage,
+  projectDiffBytes,
+  renamePage,
+  validateProject,
+  withDoc,
+  type ProjectState,
+} from "@/lib/world/project";
+import { buildTemplate, getProject, loadProjectState, newId, saveProject, saveProjectState, type TemplateKey } from "@/lib/world/storage";
 import type { AssetDef, MapDoc, Project, Rot } from "@/lib/world/types";
 import { validateMap } from "@/lib/world/validate";
 import AgentPanel, { type AgentLogEntry, type AgentProposal } from "./agent-panel";
@@ -63,10 +78,14 @@ function download(name: string, text: string) {
 
 export default function Editor({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<Project | null>(null);
-  const [maps, setMaps] = useState<MapDoc[]>([]);
-  const [doc, setDocState] = useState<MapDoc | null>(null);
+  /** 프로젝트 전체 편집 상태(모든 페이지). 현재 페이지 = ps.docs[curId] */
+  const [ps, setPsState] = useState<ProjectState | null>(null);
+  const [curId, setCurId] = useState<string>("");
+  /** 마지막으로 저장한 상태 (참조 비교로 변경 여부 판단) */
+  const [saved, setSaved] = useState<ProjectState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const doc = ps?.docs[curId] ?? null;
+  const dirty = !!ps && !!saved && (ps.order.join() !== saved.order.join() || ps.order.some((id) => ps.docs[id] !== saved.docs[id]));
   const [tool, setTool] = useState<Tool>("select");
   const [assetId, setAssetId] = useState("nature.tree");
   const [rot, setRot] = useState<Rot>(0);
@@ -84,11 +103,18 @@ export default function Editor({ projectId }: { projectId: string }) {
   const [agentLog, setAgentLog] = useState<AgentLogEntry[]>([]);
   const [showGrid, setShowGrid] = useState(true);
   const [xray, setXray] = useState(false);
-  const [pendingPortal, setPendingPortal] = useState<{ x: number; y: number } | null>(null);
+  /** 포털 1단계에서 찍은 시작 지점 (페이지 이동해도 유지, 커밋 전까지 맵에는 아무것도 없음 → 고아 포털 없음) */
+  const [pendingPortal, setPendingPortal] = useState<{ mapId: string; x: number; y: number } | null>(null);
+  const [placeScale, setPlaceScale] = useState(1);
+  const [pageMenu, setPageMenu] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [pageListOpen, setPageListOpen] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<WorldRenderer | null>(null);
-  const historyRef = useRef(new History());
+  const historyRef = useRef(new History<ProjectState>(80, 12 * 1024 * 1024, projectDiffBytes));
+  const psRef = useRef<ProjectState | null>(null);
+  const curIdRef = useRef("");
   const docRef = useRef<MapDoc | null>(null);
   const sceneRef = useRef<SceneState>({ mode: "edit", time: 0, showGrid: true, showZones: true });
   const schedRef = useRef<ReturnType<typeof createRenderScheduler> | null>(null);
@@ -119,17 +145,20 @@ export default function Editor({ projectId }: { projectId: string }) {
       setLoadError("이 브라우저에서 스페이스를 찾을 수 없어요. 대시보드에서 다시 열어 주세요.");
       return;
     }
-    const all = p.mapIds.map((id) => loadMap(id)).filter((m): m is MapDoc => !!m);
-    if (!all.length) {
+    const loaded = loadProjectState(p);
+    if (!loaded) {
       setLoadError("맵 데이터를 읽을 수 없어요.");
       return;
     }
     const want = new URLSearchParams(window.location.search).get("map");
-    const first = all.find((m) => m.id === want) ?? all[0];
+    const first = want && loaded.docs[want] ? want : loaded.order[0];
     setProject(p);
-    setMaps(all);
-    docRef.current = first;
-    setDocState(first);
+    psRef.current = loaded;
+    curIdRef.current = first;
+    docRef.current = loaded.docs[first];
+    setPsState(loaded);
+    setSaved(loaded);
+    setCurId(first);
     setViewState(readView());
     setViewReady(true);
   }, [projectId]);
@@ -159,27 +188,44 @@ export default function Editor({ projectId }: { projectId: string }) {
     }
   };
 
-  const setDoc = useCallback((next: MapDoc, markDirty = true) => {
-    docRef.current = next;
-    setDocState(next);
-    if (markDirty) setDirty(true);
+  /** 편집 상태 교체(현재 페이지가 없어지면 첫 페이지로) */
+  const setPs = useCallback((next: ProjectState, focus?: string) => {
+    let id = focus && next.docs[focus] ? focus : curIdRef.current;
+    if (!next.docs[id]) id = next.order[0];
+    psRef.current = next;
+    curIdRef.current = id;
+    docRef.current = next.docs[id];
+    setPsState(next);
+    setCurId(id);
   }, []);
 
-  /** 모든 편집은 이 함수로: 원자적 적용 + undo 기록 */
+  /** 여러 페이지에 걸친 변경: 고아 포털 정리 후 한 단계로 undo 기록 */
+  const commitPs = useCallback(
+    (next: ProjectState, label: string, focus?: string) => {
+      const prev = psRef.current;
+      if (!prev) return false;
+      const cleaned = cleanupOrphanPortals(next);
+      historyRef.current.record(prev, label, cleaned, focus ?? curIdRef.current);
+      setPs(cleaned, focus);
+      return true;
+    },
+    [setPs],
+  );
+
+  /** 현재 페이지 편집은 이 함수로: 원자적 적용 + (다른 페이지 짝 포털 정리) + undo 기록 */
   const commit = useCallback(
     (ops: MapOp[], label: string) => {
       const cur = docRef.current;
-      if (!cur) return false;
+      const prev = psRef.current;
+      if (!cur || !prev) return false;
       const r = applyOps(cur, ops);
       if (!r.ok) {
         flash(r.errors[0]?.message ?? "적용할 수 없어요", true);
         return false;
       }
-      historyRef.current.record(cur, label);
-      setDoc(r.doc);
-      return true;
+      return commitPs(withDoc(prev, r.doc), label);
     },
-    [flash, setDoc],
+    [flash, commitPs],
   );
 
   // ---------- 렌더러 (문서가 처음 준비될 때 한 번 생성) ----------
@@ -212,36 +258,53 @@ export default function Editor({ projectId }: { projectId: string }) {
   // 문서·장면 상태가 바뀔 때만 다시 그림 (편집 화면은 rAF 루프 없음)
   useEffect(() => {
     const r = rendererRef.current;
-    if (!r || !doc) return;
-    r.setDoc(preview ? preview.doc : doc);
+    if (!r || !doc || !ps) return;
+    const shown = preview ? preview.doc : doc;
+    r.setDoc(shown);
+    const portalTags = shown.interactions.flatMap((i) => {
+      if (i.type !== "portal") return [];
+      if (i.targetMapId) return [{ x: i.x, y: i.y, text: `→ ${ps.docs[i.targetMapId]?.name ?? "(없는 페이지)"}` }];
+      return [{ x: i.x, y: i.y, text: "↔ 이 페이지" }];
+    });
     sceneRef.current = {
       ...sceneRef.current,
       showGrid,
       xray,
       selectedId,
       highlight: preview?.highlight ?? null,
+      portalTags,
+      pendingPortal: pendingPortal && pendingPortal.mapId === doc.id ? { x: pendingPortal.x, y: pendingPortal.y, label: "시작 포털" } : null,
+      portalLink: null,
     };
     schedRef.current?.request();
-  }, [doc, preview, showGrid, xray, selectedId, atlasReady]);
+  }, [doc, ps, preview, showGrid, xray, selectedId, atlasReady, pendingPortal]);
+
+  // 페이지가 바뀌면 렌더러 문서 교체 + 전체 보기
+  useEffect(() => {
+    const r = rendererRef.current;
+    if (!r || !curId || !psRef.current) return;
+    r.setDoc(psRef.current.docs[curId]);
+    r.fitToMap();
+    schedRef.current?.request();
+    window.history.replaceState(null, "", `/editor/${projectId}?map=${curId}`);
+  }, [curId, projectId]);
 
   // ---------- 저장 ----------
   const save = useCallback(() => {
-    const cur = docRef.current;
+    const cur = psRef.current;
     if (!cur || !project) return false;
     try {
-      saveMap(cur);
-      const p = { ...project, mapIds: project.mapIds };
-      saveProject(p);
+      // 모든 페이지(포털 짝 포함)를 한 번에 저장, 실패하면 이전 값으로 되돌림
+      const p = saveProjectState(project, cur, saved);
       setProject(p);
-      setMaps((ms) => ms.map((m) => (m.id === cur.id ? cur : m)));
-      setDirty(false);
+      setSaved(cur);
       flash("저장했어요");
       return true;
     } catch (e) {
       flash(`저장 실패: ${e instanceof Error ? e.message : "저장소 오류"}`, true);
       return false;
     }
-  }, [project, flash]);
+  }, [project, saved, flash]);
 
   const saveAndPlay = useCallback(() => {
     if (preview) {
@@ -251,8 +314,9 @@ export default function Editor({ projectId }: { projectId: string }) {
     const cur = docRef.current;
     if (!cur) return;
     const v = validateMap(cur);
-    if (v.errors.length) {
-      flash(`플레이할 수 없어요: ${v.errors[0].message}`, true);
+    const pv = psRef.current ? validateProject(psRef.current) : [];
+    if (v.errors.length || pv.length) {
+      flash(`플레이할 수 없어요: ${(v.errors[0] ?? pv[0]).message}`, true);
       setTab("check");
       return;
     }
@@ -269,25 +333,26 @@ export default function Editor({ projectId }: { projectId: string }) {
 
   // ---------- undo/redo ----------
   const undo = useCallback(() => {
-    const cur = docRef.current;
+    const cur = psRef.current;
     if (!cur || preview) return;
     const e = historyRef.current.undo(cur);
     if (e) {
-      setDoc(e.doc);
+      setPs(e.doc, e.focus);
       setSelectedId(null);
       flash(`되돌림: ${e.label}`);
     }
-  }, [preview, setDoc, flash]);
+  }, [preview, setPs, flash]);
 
   const redo = useCallback(() => {
-    const cur = docRef.current;
+    const cur = psRef.current;
     if (!cur || preview) return;
     const e = historyRef.current.redo(cur);
     if (e) {
-      setDoc(e.doc);
+      setPs(e.doc, e.focus);
+      setSelectedId(null);
       flash(`다시 실행: ${e.label}`);
     }
-  }, [preview, setDoc, flash]);
+  }, [preview, setPs, flash]);
 
   // ---------- 에이전트 미리보기 ----------
   const onProposal = useCallback(
@@ -311,10 +376,9 @@ export default function Editor({ projectId }: { projectId: string }) {
   );
 
   const applyPreview = () => {
-    const cur = docRef.current;
-    if (!preview || !cur) return;
-    historyRef.current.record(cur, `에이전트: ${preview.proposal.summary.slice(0, 24)}`);
-    setDoc(preview.doc);
+    const prev = psRef.current;
+    if (!preview || !prev) return;
+    commitPs(withDoc(prev, preview.doc), `에이전트: ${preview.proposal.summary.slice(0, 24)}`);
     setPreview(null);
     setAgentLog((l) => [...l, { role: "agent", text: "적용했어요. 되돌리기(Ctrl+Z)로 취소할 수 있어요.", meta: ["적용됨"] }]);
   };
@@ -325,12 +389,12 @@ export default function Editor({ projectId }: { projectId: string }) {
   };
 
   // ---------- 캔버스 입력 ----------
-  const canPlaceGhost = useCallback((id: string, x: number, y: number, r: Rot) => {
+  const canPlaceGhost = useCallback((id: string, x: number, y: number, r: Rot, scale = 1) => {
     const cur = docRef.current;
     const a = getAsset(id);
     if (!cur || !a) return false;
     if (a.kind === "tile") return inBounds(cur, x, y);
-    const fp = footprintOf(a, r);
+    const fp = footprintOf(a, r, scale);
     const occ = occupancy(cur);
     for (let dy = 0; dy < fp.d; dy++) {
       for (let dx = 0; dx < fp.w; dx++) {
@@ -360,12 +424,15 @@ export default function Editor({ projectId }: { projectId: string }) {
     } else if (!preview && (tool === "place" || tool === "paint") && inBounds(cur, c.x, c.y)) {
       const id = assetId;
       const a = getAsset(id);
-      if (a && ((tool === "paint") === (a.kind === "tile"))) ghost = { assetId: id, x: c.x, y: c.y, rot, valid: canPlaceGhost(id, c.x, c.y, rot) };
+      const sc = a && a.kind === "object" && !a.interaction ? placeScale : 1;
+      if (a && ((tool === "paint") === (a.kind === "tile"))) ghost = { assetId: id, x: c.x, y: c.y, rot: a.interaction ? 0 : rot, valid: canPlaceGhost(id, c.x, c.y, a.interaction ? 0 : rot, sc), scale: sc };
     } else if (drag?.kind === "move" && drag.objectId) {
       const o = cur.objects.find((q) => q.id === drag.objectId);
-      if (o) ghost = { assetId: o.assetId, x: c.x, y: c.y, rot: o.rot, valid: true };
+      if (o) ghost = { assetId: o.assetId, x: c.x, y: c.y, rot: o.rot, valid: true, scale: o.scale };
     }
-    sceneRef.current = { ...sceneRef.current, ghost, hoverCell: hover };
+    const pp = pendingPortal;
+    const portalLink = pp && pp.mapId === cur.id && tool === "place" && inBounds(cur, c.x, c.y) ? { from: pp, to: c } : null;
+    sceneRef.current = { ...sceneRef.current, ghost, hoverCell: hover, portalLink };
     schedRef.current?.request();
   };
 
@@ -413,14 +480,24 @@ export default function Editor({ projectId }: { projectId: string }) {
         return;
       }
       if (a.interaction === "portal") {
+        if (!canPlaceGhost(assetId, c.x, c.y, 0)) return flash("그 자리에는 포털을 놓을 수 없어요", true);
         if (!pendingPortal) {
-          if (!canPlaceGhost(assetId, c.x, c.y, 0)) return flash("그 자리에는 놓을 수 없어요", true);
-          setPendingPortal(c);
-          flash("도착 포털 위치를 클릭하세요");
-        } else {
-          if (commit([{ op: "portalPair", a: pendingPortal, b: c, label: "포털" }], "포털 한 쌍")) flash("포털 한 쌍을 연결했어요");
-          setPendingPortal(null);
+          // 1단계: 시작 지점만 기억(맵은 그대로). 화면에 시작 포털·라벨·연결선이 보인다
+          setPendingPortal({ mapId: cur.id, x: c.x, y: c.y });
+          return;
         }
+        if (pendingPortal.mapId === cur.id && pendingPortal.x === c.x && pendingPortal.y === c.y) {
+          setPendingPortal(null);
+          return;
+        }
+        // 2단계: 도착 지정과 동시에 양방향 한 쌍을 한 번에 커밋(페이지가 다르면 두 페이지 함께)
+        const prev = psRef.current!;
+        const r2 = linkPortals(prev, pendingPortal, { mapId: cur.id, x: c.x, y: c.y });
+        if (!r2.ok) return flash(r2.error, true);
+        const from = prev.docs[pendingPortal.mapId]?.name ?? "";
+        commitPs(r2.ps, pendingPortal.mapId === cur.id ? "포털 한 쌍" : `포털 연결: ${from} ↔ ${cur.name}`);
+        flash(pendingPortal.mapId === cur.id ? "포털 한 쌍을 연결했어요" : `'${from}' ↔ '${cur.name}' 포털을 연결했어요`);
+        setPendingPortal(null);
         return;
       }
       if (a.interaction === "sign") {
@@ -435,7 +512,7 @@ export default function Editor({ projectId }: { projectId: string }) {
         }
         return;
       }
-      commit([{ op: "place", assetId, x: c.x, y: c.y, rot }], `${a.name} 배치`);
+      commit([{ op: "place", assetId, x: c.x, y: c.y, rot, ...(placeScale !== 1 ? { scale: placeScale } : {}) }], `${a.name} 배치${placeScale !== 1 ? ` ×${placeScale}` : ""}`);
     }
   };
 
@@ -584,42 +661,76 @@ export default function Editor({ projectId }: { projectId: string }) {
     };
   }, [save, undo, redo, selectedId, commit]);
 
-  // ---------- 맵 관리 ----------
+  // 시작 페이지가 되돌리기·삭제로 사라지면 대기 정리 (페이지 추가·전환으로는 취소되지 않음)
+  useEffect(() => {
+    if (pendingPortal && ps && !ps.docs[pendingPortal.mapId]) setPendingPortal(null);
+  }, [ps, pendingPortal]);
+
+  // 도구를 바꾸거나 포털이 아닌 에셋을 고르면 포털 대기 취소 (아직 맵에 아무것도 없으므로 고아 없음)
+  useEffect(() => {
+    if (tool !== "place" || getAsset(assetId)?.interaction !== "portal") setPendingPortal(null);
+  }, [tool, assetId]);
+
+  // ---------- 페이지(맵) 관리 ----------
   const switchMap = (id: string) => {
-    if (id === doc?.id) return;
-    if (dirty && !window.confirm("저장하지 않은 변경이 있어요. 저장하지 않고 다른 맵으로 이동할까요?")) return;
-    const m = loadMap(id);
-    if (!m) return flash("맵을 읽을 수 없어요", true);
-    historyRef.current = new History();
+    if (id === curIdRef.current || !psRef.current?.docs[id]) return;
     setPreview(null);
     setSelectedId(null);
-    setDoc(m, false);
-    setDirty(false);
-    rendererRef.current?.setDoc(m);
-    rendererRef.current?.fitToMap();
-    window.history.replaceState(null, "", `/editor/${projectId}?map=${id}`);
+    setPageMenu(null);
+    setPageListOpen(false);
+    curIdRef.current = id;
+    docRef.current = psRef.current.docs[id];
+    setCurId(id);
   };
 
   const addMap = (template: TemplateKey, name: string) => {
-    try {
-      const m = addMapToProject(projectId, template, name);
-      const p = getProject(projectId);
-      if (p) setProject(p);
-      setMaps((ms) => [...ms, m]);
-      setAddMapOpen(false);
-      setDirty(false);
-      switchMap(m.id);
-    } catch (e) {
-      flash(e instanceof Error ? e.message : "맵을 추가할 수 없어요", true);
+    const prev = psRef.current;
+    if (!prev) return;
+    const m = buildTemplate(template, newId("map"), name);
+    commitPs(addPage(prev, m, prev.order.indexOf(curIdRef.current) + 1), `페이지 추가: ${m.name}`, m.id);
+    setAddMapOpen(false);
+  };
+
+  const pageAction = (id: string, action: "dup" | "left" | "right" | "delete") => {
+    const prev = psRef.current;
+    if (!prev) return;
+    setPageMenu(null);
+    const name = prev.docs[id]?.name ?? "";
+    if (action === "dup") {
+      const r = duplicatePage(prev, id, newId("map"));
+      if (!r.ok) return flash(r.error, true);
+      const nid = r.ps.order[r.ps.order.indexOf(id) + 1];
+      commitPs(r.ps, `페이지 복제: ${name}`, nid);
+    } else if (action === "left" || action === "right") {
+      const next = movePage(prev, id, action === "left" ? -1 : 1);
+      if (next !== prev) commitPs(next, `페이지 순서: ${name}`, id);
+    } else {
+      const incoming = incomingPortals(prev, id);
+      const msg = incoming ? `'${name}' 페이지를 삭제할까요? 다른 페이지에서 이 페이지로 오는 포털 ${incoming}개도 함께 지워집니다. (되돌리기 가능)` : `'${name}' 페이지를 삭제할까요? (되돌리기 가능)`;
+      if (!window.confirm(msg)) return;
+      const r = deletePage(prev, id);
+      if (!r.ok) return flash(r.error, true);
+      commitPs(r.ps, `페이지 삭제: ${name}`);
     }
   };
 
+  const commitRename = (id: string, name: string) => {
+    setRenaming(null);
+    const prev = psRef.current;
+    if (!prev || prev.docs[id]?.name === name.trim()) return;
+    const r = renamePage(prev, id, name);
+    if (!r.ok) return flash(r.error, true);
+    commitPs(r.ps, `페이지 이름: ${name.trim()}`, id);
+  };
+
+  /** 가져오기: 기존 페이지를 덮어쓰지 않고 새 id 의 페이지로 추가 (프로젝트 번들이면 페이지 간 포털 유지) */
   const importJson = async (file: File) => {
-    const r = parseMapJson(await file.text());
+    const r = parseBundle(await file.text(), () => newId("map"));
     if (!r.ok) return flash(`가져오기 실패: ${r.errors[0]?.message}`, true);
-    const cur = docRef.current!;
-    historyRef.current.record(cur, "JSON 가져오기");
-    setDoc({ ...r.doc, id: cur.id });
+    let next = psRef.current!;
+    for (const id of r.ps.order) next = addPage(next, r.ps.docs[id]);
+    commitPs(next, `가져오기: 페이지 ${r.ps.order.length}개`, r.ps.order[0]);
+    if (r.warnings.some((w) => w.code === "portal")) flash(r.warnings.find((w) => w.code === "portal")!.message);
     flash("JSON 맵을 불러왔어요 (되돌리기 가능)");
   };
 
@@ -630,11 +741,17 @@ export default function Editor({ projectId }: { projectId: string }) {
   }, [category, query]);
 
   const validation = useMemo(() => (doc ? validateMap(doc) : null), [doc]);
+  const projectIssues = useMemo(() => (ps ? validateProject(ps) : []), [ps]);
   const selected = doc?.objects.find((o) => o.id === selectedId) ?? null;
   const selectedAsset = selected ? getAsset(selected.assetId) : null;
   const selectedInteraction = selected ? doc?.interactions.find((i) => i.x === selected.x && i.y === selected.y) : null;
   const history = historyRef.current;
-  const hint = pendingPortal ? "도착 포털 위치를 클릭하세요 (Esc 취소)" : preview ? "미리보기 중 — 오른쪽에서 적용 또는 취소 · 드래그로 화면 이동" : TOOLS.find((t) => t.id === tool)?.hint;
+  const pendingName = pendingPortal ? (ps?.docs[pendingPortal.mapId]?.name ?? "") : "";
+  const hint = pendingPortal
+    ? pendingPortal.mapId === curId
+      ? "2단계: 도착 위치를 클릭하세요 · 다른 페이지로 연결하려면 아래 페이지 탭을 고르세요"
+      : `2단계: '${pendingName}'의 시작 포털과 연결할 도착 위치를 이 페이지에서 클릭하세요`
+    : preview ? "미리보기 중 — 오른쪽에서 적용 또는 취소 · 드래그로 화면 이동" : TOOLS.find((t) => t.id === tool)?.hint;
 
   if (loadError) {
     return (
@@ -672,16 +789,6 @@ export default function Editor({ projectId }: { projectId: string }) {
             saveProject(p);
           }}
         />
-        <select className="select" style={{ width: 150, height: 34, padding: "0 8px" }} value={doc.id} onChange={(e) => switchMap(e.target.value)} aria-label="맵 선택">
-          {maps.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.id === doc.id ? doc.name : m.name}
-            </option>
-          ))}
-        </select>
-        <button className="btn sm hide-sm" onClick={() => setAddMapOpen(true)}>
-          ＋ 맵
-        </button>
         <div className="sep" />
         <button className="btn icon sm" onClick={undo} disabled={!history.canUndo || !!preview} title="되돌리기 (Ctrl+Z)" aria-label="되돌리기">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
@@ -715,7 +822,7 @@ export default function Editor({ projectId }: { projectId: string }) {
             e.target.value = "";
           }}
         />
-        <button className="btn sm hide-sm" onClick={() => download(`${doc.name}.moa.json`, serializeMap(doc))}>
+        <button className="btn sm hide-sm" title="모든 페이지와 페이지 간 포털을 함께 내보내기" onClick={() => download(`${project.name}.moa-project.json`, serializeProject(project.name, project.description, ps!))}>
           내보내기
         </button>
         <button className="btn sm" onClick={save} title="저장 (Ctrl+S)">
@@ -784,6 +891,16 @@ export default function Editor({ projectId }: { projectId: string }) {
               ⟳ {rot}°
             </button>
           )}
+          {tool === "place" && !getAsset(assetId)?.interaction && (
+            <>
+              <ScaleSelect value={placeScale} onChange={setPlaceScale} label="배치 크기" compact />
+              {(() => {
+                const a = getAsset(assetId);
+                const fp = a ? footprintOf(a, rot, placeScale) : null;
+                return fp ? <span className="tool" style={{ cursor: "default" }} title="실제로 차지하는 칸(충돌 동일)">{fp.w}×{fp.d}칸</span> : null;
+              })()}
+            </>
+          )}
         </div>
         <div className="canvas-hud">
           <button className={`btn sm ${showGrid ? "" : "ghost"}`} onClick={() => setShowGrid((v) => !v)}>
@@ -830,9 +947,86 @@ export default function Editor({ projectId }: { projectId: string }) {
           </button>
         </div>
         {hint && <div className="hint">{hint}</div>}
+        <nav className="page-tabs" aria-label="페이지">
+          {ps!.order.map((id, i) => {
+            const m = ps!.docs[id];
+            const portals = m.interactions.filter((q) => q.type === "portal" && q.targetMapId).length;
+            return (
+              <div key={id} className={`page-tab ${id === curId ? "on" : ""} ${pendingPortal?.mapId === id ? "pending" : ""}`}>
+                {renaming === id ? (
+                  <input
+                    className="page-rename"
+                    autoFocus
+                    defaultValue={m.name}
+                    maxLength={60}
+                    aria-label="페이지 이름"
+                    onBlur={(e) => commitRename(id, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      if (e.key === "Escape") setRenaming(null);
+                    }}
+                  />
+                ) : (
+                  <button className="page-name" onClick={() => switchMap(id)} onDoubleClick={() => setRenaming(id)} title={`${i + 1}. ${m.name} (두 번 클릭해 이름 변경)`}>
+                    <span className="page-no">{i + 1}</span>
+                    {m.name}
+                    {portals > 0 && <span className="page-portal" title={`다른 페이지로 가는 포털 ${portals}개`}>⇄{portals}</span>}
+                  </button>
+                )}
+                <button className="page-more" aria-label={`${m.name} 메뉴`} onClick={() => setPageMenu(pageMenu === id ? null : id)}>
+                  ⋯
+                </button>
+                {pageMenu === id && (
+                  <div className="page-menu" role="menu">
+                    <button role="menuitem" onClick={() => { setPageMenu(null); setRenaming(id); }}>이름 변경</button>
+                    <button role="menuitem" onClick={() => pageAction(id, "dup")}>복제</button>
+                    <button role="menuitem" onClick={() => { setPageMenu(null); download(`${m.name}.moa.json`, serializeMap(m)); }}>이 페이지만 내보내기</button>
+                    <button role="menuitem" disabled={i === 0} onClick={() => pageAction(id, "left")}>◀ 앞으로</button>
+                    <button role="menuitem" disabled={i === ps!.order.length - 1} onClick={() => pageAction(id, "right")}>뒤로 ▶</button>
+                    <button role="menuitem" className="danger" disabled={ps!.order.length <= 1} onClick={() => pageAction(id, "delete")}>삭제</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <button className="page-add" onClick={() => setAddMapOpen(true)} aria-label="페이지 추가">
+            ＋
+          </button>
+          <button className="page-list-btn" onClick={() => setPageListOpen((v) => !v)} aria-expanded={pageListOpen}>
+            목록 {ps!.order.length}
+          </button>
+          {pageListOpen && (
+            <div className="page-list" role="menu">
+              {ps!.order.map((id, i) => (
+                <button key={id} role="menuitem" className={id === curId ? "on" : ""} onClick={() => switchMap(id)}>
+                  <span className="page-no">{i + 1}</span> {ps!.docs[id].name}
+                  <span style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 12 }}>
+                    오브젝트 {ps!.docs[id].objects.length}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </nav>
       </section>
 
       <aside className="ed-right">
+        {pendingPortal && (
+          <div className="portal-banner" role="status" data-testid="portal-pending">
+            <span className="chip coral">포털 2단계</span>
+            <span>
+              시작: <b>{pendingName}</b> ({pendingPortal.x}, {pendingPortal.y}) → {pendingPortal.mapId === curId ? "이 페이지나 다른 페이지 탭에서 도착 위치를 클릭" : <>이 페이지(<b>{doc.name}</b>)에서 도착 위치를 클릭</>}
+            </span>
+            {pendingPortal.mapId !== curId && (
+              <button className="btn sm" onClick={() => switchMap(pendingPortal.mapId)}>
+                시작 페이지 보기
+              </button>
+            )}
+            <button className="btn sm" onClick={() => setPendingPortal(null)}>
+              취소 (Esc)
+            </button>
+          </div>
+        )}
         <div className="tabs" role="tablist">
           {(
             [
@@ -889,10 +1083,29 @@ export default function Editor({ projectId }: { projectId: string }) {
                   </dd>
                   <dt>크기</dt>
                   <dd>
-                    {footprintOf(selectedAsset, selected.rot).w}×{footprintOf(selectedAsset, selected.rot).d} 칸
+                    {footprintOf(selectedAsset, selected.rot, selected.scale ?? 1).w}×{footprintOf(selectedAsset, selected.rot, selected.scale ?? 1).d} 칸 (충돌 동일)
                   </dd>
                   <dt>회전</dt>
                   <dd>{selected.rot}°</dd>
+                  <dt>크기</dt>
+                  <dd>
+                    {selectedAsset.interaction ? (
+                      <span style={{ color: "var(--muted)", fontWeight: 500 }}>상호작용 오브젝트는 1배</span>
+                    ) : (
+                      <span className="row" style={{ gap: 6 }}>
+                        <ScaleSelect
+                          value={selected.scale ?? 1}
+                          onChange={(v) => commit([{ op: "scale", id: selected.id, scale: v }], `크기 ×${v}`)}
+                          label={`${selectedAsset.name} 크기`}
+                        />
+                        {(selected.scale ?? 1) !== 1 && (
+                          <button className="btn sm" onClick={() => commit([{ op: "scale", id: selected.id, scale: 1 }], "크기 ×1")}>
+                            1배로
+                          </button>
+                        )}
+                      </span>
+                    )}
+                  </dd>
                   <dt>충돌</dt>
                   <dd>{selectedAsset.blocking ? "막힘" : "지나갈 수 있음"}</dd>
                   <dt>에셋</dt>
@@ -914,7 +1127,19 @@ export default function Editor({ projectId }: { projectId: string }) {
                     삭제 (Del)
                   </button>
                 </div>
-                {selectedInteraction && <InteractionEditor key={selectedInteraction.id} interaction={selectedInteraction} maps={maps.filter((m) => m.id !== doc.id)} commit={commit} />}
+                {selectedInteraction && (
+                  <InteractionEditor
+                    key={selectedInteraction.id}
+                    interaction={selectedInteraction}
+                    ps={ps!}
+                    commit={commit}
+                    onJump={(mapId, x, y) => {
+                      switchMap(mapId);
+                      const o = psRef.current?.docs[mapId]?.objects.find((q) => q.x === x && q.y === y);
+                      if (o) setSelectedId(o.id);
+                    }}
+                  />
+                )}
               </>
             ) : (
               <>
@@ -922,10 +1147,14 @@ export default function Editor({ projectId }: { projectId: string }) {
                   <label htmlFor="map-name">맵 이름</label>
                   <input
                     id="map-name"
+                    key={doc.id + doc.name}
                     className="input"
-                    value={doc.name}
+                    defaultValue={doc.name}
                     maxLength={60}
-                    onChange={(e) => setDoc({ ...doc, name: e.target.value })}
+                    onBlur={(e) => commitRename(doc.id, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    }}
                   />
                 </div>
                 <dl className="kv">
@@ -972,7 +1201,12 @@ export default function Editor({ projectId }: { projectId: string }) {
 
         {tab === "check" && validation && (
           <div className="tab-body">
-            {validation.errors.length === 0 && validation.warnings.length === 0 && <div className="issue ok">문제 없음 — 시작 위치에서 모든 구역과 상호작용에 갈 수 있어요.</div>}
+            {projectIssues.map((e, i) => (
+              <div key={`p${i}`} className="issue err">
+                {e.message}
+              </div>
+            ))}
+            {validation.errors.length === 0 && validation.warnings.length === 0 && projectIssues.length === 0 && <div className="issue ok">문제 없음 — 시작 위치에서 모든 구역과 상호작용에 갈 수 있어요.</div>}
             {validation.errors.map((e, i) => (
               <div key={`e${i}`} className="issue err">
                 {e.message}
@@ -1007,12 +1241,14 @@ export default function Editor({ projectId }: { projectId: string }) {
 
 function InteractionEditor({
   interaction: i,
-  maps,
+  ps,
   commit,
+  onJump,
 }: {
   interaction: MapDoc["interactions"][number];
-  maps: MapDoc[];
+  ps: ProjectState;
   commit: (ops: MapOp[], label: string) => boolean;
+  onJump: (mapId: string, x: number, y: number) => void;
 }) {
   const [text, setText] = useState(i.type === "sign" ? i.text : "");
   const [question, setQuestion] = useState(i.type === "quiz" ? i.question : "");
@@ -1057,25 +1293,50 @@ function InteractionEditor({
       </>
     );
   }
+  // 포털: 도착 페이지·위치 표시와 바로 가기
+  const targetMap = i.targetMapId ? ps.docs[i.targetMapId] : null;
+  const partner = i.targetId ? (targetMap ?? null)?.interactions.find((q) => q.id === i.targetId) ?? (i.targetMapId ? null : undefined) : null;
   return (
-    <div className="field">
+    <div className="field" data-testid="portal-props">
       <label>포털 도착지</label>
-      <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{i.targetId ? `같은 맵의 짝 포털(${i.targetId})로 이동` : "다른 맵으로 이동"}</div>
-      {maps.length > 0 && (
-        <select
-          className="select"
-          value={i.targetMapId ?? ""}
-          onChange={(e) => commit([{ op: "editInteraction", id: i.id, targetMapId: e.target.value || null }], "포털 도착지")}
-        >
-          <option value="">{i.targetId ? "짝 포털 (같은 맵)" : "선택 안 함"}</option>
-          {maps.map((m) => (
-            <option key={m.id} value={m.id}>
-              다른 맵: {m.name} (시작 위치)
-            </option>
-          ))}
-        </select>
+      <div style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.6 }}>
+        {i.targetMapId ? (
+          <>
+            다른 페이지 <b>{targetMap?.name ?? "(없는 페이지)"}</b>
+            {partner ? ` · 도착 포털 (${partner.x}, ${partner.y})` : " · 시작 위치"}
+          </>
+        ) : (
+          <>같은 페이지의 짝 포털로 이동</>
+        )}
+      </div>
+      {i.targetMapId && targetMap && (
+        <button className="btn sm" onClick={() => onJump(i.targetMapId!, partner?.x ?? -1, partner?.y ?? -1)}>
+          도착 페이지로 가기 →
+        </button>
       )}
+      <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>포털을 지우면 짝 포털도 함께 지워집니다(되돌리기 가능).</p>
     </div>
+  );
+}
+
+const SCALES = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3].filter((v) => v >= SCALE_MIN && v <= SCALE_MAX);
+
+function ScaleSelect({ value, onChange, label, compact }: { value: number; onChange: (v: number) => void; label: string; compact?: boolean }) {
+  return (
+    <select
+      className={compact ? "tool-select" : "select"}
+      style={compact ? undefined : { height: 30, padding: "0 8px", width: "auto" }}
+      value={value}
+      aria-label={label}
+      title="크기 배율 (점유 칸·충돌도 함께 바뀜)"
+      onChange={(e) => onChange(Number(e.target.value))}
+    >
+      {SCALES.map((v) => (
+        <option key={v} value={v}>
+          {compact ? `크기 ×${v}` : `×${v}`}
+        </option>
+      ))}
+    </select>
   );
 }
 

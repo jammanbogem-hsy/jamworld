@@ -10,6 +10,10 @@ export interface PlayerState {
   y: number;
   dir: number; // 0 아래, 1 왼쪽, 2 위, 3 오른쪽
   moving: boolean;
+  /** 아이소 화면 8방향(movement.DIR8), 없으면 dir 사용 */
+  face8?: number;
+  /** 누적 이동 거리(px) — 걷기 프레임 위상 */
+  walk?: number;
 }
 
 export class PlayWorld {
@@ -43,12 +47,20 @@ export class PlayWorld {
     return { x: this.doc.spawn.x + 0.5, y: this.doc.spawn.y + 0.5, dir: 0, moving: false };
   }
 
-  /** 축별로 따로 움직여 벽을 따라 미끄러진다 */
+  /** 축별로 따로 움직여 벽을 따라 미끄러진다 (입력 방향을 격자 속도 PLAYER_SPEED 로 정규화) */
   step(p: PlayerState, ix: number, iy: number, dt: number): PlayerState {
     const len = Math.hypot(ix, iy);
     if (len < 0.01) return { ...p, moving: false };
-    const vx = (ix / len) * PLAYER_SPEED * dt;
-    const vy = (iy / len) * PLAYER_SPEED * dt;
+    return this.stepVelocity(p, (ix / len) * PLAYER_SPEED, (iy / len) * PLAYER_SPEED, dt);
+  }
+
+  /** 격자 속도(셀/초)를 그대로 적용 */
+  stepVelocity(p: PlayerState, gvx: number, gvy: number, dt: number): PlayerState {
+    const ix = gvx;
+    const iy = gvy;
+    if (Math.hypot(gvx, gvy) < 1e-6) return { ...p, moving: false };
+    const vx = gvx * dt;
+    const vy = gvy * dt;
     let { x, y } = p;
     // 큰 dt 에서도 벽을 뚫지 않도록 잘게 나눈다
     const n = Math.max(1, Math.ceil(Math.max(Math.abs(vx), Math.abs(vy)) / 0.2));
@@ -57,7 +69,7 @@ export class PlayWorld {
       if (!this.collides(x, y + vy / n)) y += vy / n;
     }
     const dir = Math.abs(ix) > Math.abs(iy) ? (ix < 0 ? 1 : 3) : iy < 0 ? 2 : 0;
-    return { x, y, dir, moving: true };
+    return { ...p, x, y, dir, moving: true };
   }
 
   /** 가까운 안내판·퀴즈 (포털은 밟을 때 발동) */

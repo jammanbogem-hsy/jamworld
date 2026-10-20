@@ -174,10 +174,22 @@ export function isTile(id: string) {
   return BY_ID.get(id)?.kind === "tile";
 }
 
-export function footprintOf(asset: AssetDef, rot: Rot) {
-  return rot === 90 || rot === 270
-    ? { w: asset.footprint.d, d: asset.footprint.w }
-    : { w: asset.footprint.w, d: asset.footprint.d };
+export const SCALE_MIN = 0.5;
+export const SCALE_MAX = 3;
+
+export function isValidScale(s: unknown): s is number {
+  return typeof s === "number" && Number.isFinite(s) && s >= SCALE_MIN && s <= SCALE_MAX;
+}
+
+/**
+ * 점유 칸(충돌과 동일). 회전 후 기본 칸 × 배율을 올림(보수적), 최소 1칸.
+ * 그림 폭(기본 × 배율)은 항상 점유 칸 안에 들어가 이웃 칸 오브젝트와 그림이 겹치지 않는다.
+ */
+export function footprintOf(asset: AssetDef, rot: Rot, scale = 1) {
+  const w = rot === 90 || rot === 270 ? asset.footprint.d : asset.footprint.w;
+  const d = rot === 90 || rot === 270 ? asset.footprint.w : asset.footprint.d;
+  if (scale === 1) return { w, d };
+  return { w: Math.max(1, Math.ceil(w * scale - 1e-9)), d: Math.max(1, Math.ceil(d * scale - 1e-9)) };
 }
 
 export const CATEGORY_LABEL: Record<AssetDef["category"], string> = {

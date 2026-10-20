@@ -1,0 +1,323 @@
+{
+  "version": 3,
+  "source": "Codex built-in ImageGen; original art",
+  "style": "moa-toon-v2",
+  "sheets": [
+    {
+      "file": "iso-avatar-8dir.png",
+      "view": "iso",
+      "kind": "avatar",
+      "cols": 4,
+      "rows": 8,
+      "size": [
+        887,
+        1774
+      ],
+      "rowDirections": [
+        "se",
+        "sw",
+        "w",
+        "nw",
+        "n",
+        "ne",
+        "e",
+        "s"
+      ],
+      "frames": [
+        {
+          "name": "se0",
+          "rect": [
+            48,
+            19,
+            152,
+            209
+          ]
+        },
+        {
+          "name": "se1",
+          "rect": [
+            261,
+            19,
+            150,
+            210
+          ]
+        },
+        {
+          "name": "se2",
+          "rect": [
+            475,
+            19,
+            149,
+            210
+          ]
+        },
+        {
+          "name": "se3",
+          "rect": [
+            689,
+            20,
+            152,
+            211
+          ]
+        },
+        {
+          "name": "sw0",
+          "rect": [
+            37,
+            232,
+            151,
+            208
+          ]
+        },
+        {
+          "name": "sw1",
+          "rect": [
+            257,
+            232,
+            149,
+            208
+          ]
+        },
+        {
+          "name": "sw2",
+          "rect": [
+            475,
+            231,
+            151,
+            208
+          ]
+        },
+        {
+          "name": "sw3",
+          "rect": [
+            698,
+            233,
+            149,
+            207
+          ]
+        },
+        {
+          "name": "w0",
+          "rect": [
+            40,
+            440,
+            148,
+            208
+          ]
+        },
+        {
+          "name": "w1",
+          "rect": [
+            260,
+            440,
+            145,
+            208
+          ]
+        },
+        {
+          "name": "w2",
+          "rect": [
+            482,
+            440,
+            145,
+            208
+          ]
+        },
+        {
+          "name": "w3",
+          "rect": [
+            696,
+            440,
+            147,
+            210
+          ]
+        },
+        {
+          "name": "nw0",
+          "rect": [
+            41,
+            655,
+            146,
+            207
+          ]
+        },
+        {
+          "name": "nw1",
+          "rect": [
+            260,
+            654,
+            146,
+            210
+          ]
+        },
+        {
+          "name": "nw2",
+          "rect": [
+            478,
+            654,
+            147,
+            209
+          ]
+        },
+        {
+          "name": "nw3",
+          "rect": [
+            695,
+            654,
+            147,
+            211
+          ]
+        },
+        {
+          "name": "n0",
+          "rect": [
+            44,
+            872,
+            148,
+            213
+          ]
+        },
+        {
+          "name": "n1",
+          "rect": [
+            261,
+            872,
+            148,
+            215
+          ]
+        },
+        {
+          "name": "n2",
+          "rect": [
+            478,
+            872,
+            147,
+            211
+          ]
+        },
+        {
+          "name": "n3",
+          "rect": [
+            697,
+            873,
+            146,
+            218
+          ]
+        },
+        {
+          "name": "ne0",
+          "rect": [
+            46,
+            1096,
+            154,
+            218
+          ]
+        },
+        {
+          "name": "ne1",
+          "rect": [
+            266,
+            1096,
+            152,
+            217
+          ]
+        },
+        {
+          "name": "ne2",
+          "rect": [
+            481,
+            1096,
+            152,
+            218
+          ]
+        },
+        {
+          "name": "ne3",
+          "rect": [
+            703,
+            1097,
+            148,
+            213
+          ]
+        },
+        {
+          "name": "e0",
+          "rect": [
+            45,
+            1321,
+            148,
+            215
+          ]
+        },
+        {
+          "name": "e1",
+          "rect": [
+            261,
+            1320,
+            149,
+            217
+          ]
+        },
+        {
+          "name": "e2",
+          "rect": [
+            477,
+            1320,
+            148,
+            216
+          ]
+        },
+        {
+          "name": "e3",
+          "rect": [
+            700,
+            1321,
+            150,
+            216
+          ]
+        },
+        {
+          "name": "s0",
+          "rect": [
+            42,
+            1538,
+            152,
+            213
+          ]
+        },
+        {
+          "name": "s1",
+          "rect": [
+            261,
+            1539,
+            152,
+            214
+          ]
+        },
+        {
+          "name": "s2",
+          "rect": [
+            476,
+            1539,
+            152,
+            213
+          ]
+        },
+        {
+          "name": "s3",
+          "rect": [
+            700,
+            1539,
+            153,
+            217
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Direction names describe screen-space facing. Rows 1 and 8 remapped after visual inspection; generation requested a different row order.",
+    "Column 0 idle; walking sequence 1,2,3,2. Matching direction and distance-driven cadence required.",
+    "Foot-ground anchors normalized at build time; use one common scale for all frames."
+  ]
+}

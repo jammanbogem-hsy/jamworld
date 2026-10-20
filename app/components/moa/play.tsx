@@ -8,6 +8,7 @@ import { QUALITY, type Quality } from "@/lib/render/constants";
 import { FrameLoop } from "@/lib/render/loop";
 import { WorldRenderer } from "@/lib/render/renderer";
 import { AVATAR_COLORS } from "@/lib/render/shapes";
+import { moveIso, walkFrame } from "@/lib/world/movement";
 import { PlayWorld, type PlayerState } from "@/lib/world/play";
 import { emptyScore, recordAnswer, type QuizScore } from "@/lib/world/quiz";
 import { getProject, loadMap } from "@/lib/world/storage";
@@ -78,6 +79,8 @@ export default function Play({ projectId }: { projectId: string }) {
   const dialogRef = useRef<Dialog | null>(null);
   const nearRef = useRef<Interaction | null>(null);
   const portalCooldown = useRef(0);
+  const portalArmed = useRef(true);
+  const arrivalRef = useRef<string | null>(null);
   const loopRef = useRef<FrameLoop | null>(null);
   const rendererRef = useRef<WorldRenderer | null>(null);
   dialogRef.current = dialog;
@@ -111,7 +114,12 @@ export default function Play({ projectId }: { projectId: string }) {
     rendererRef.current = r;
     const world = new PlayWorld(doc);
     worldRef.current = world;
-    playerRef.current = world.spawnState();
+    // 다른 페이지 포털로 들어왔으면 도착 포털 옆에서, 아니면 시작점에서
+    const arrival = arrivalRef.current;
+    arrivalRef.current = null;
+    playerRef.current = (arrival && world.portalExit(arrival)) || world.spawnState();
+    // 도착 직후 바로 되돌아가지 않도록: 포털 칸을 한 번 벗어나야 다시 발동
+    portalArmed.current = !arrival;
     r.resize();
     r.setDoc(doc);
     r.camera.zoom = window.innerWidth < 700 ? 0.8 : 1;
@@ -144,25 +152,31 @@ export default function Play({ projectId }: { projectId: string }) {
         ix += joy.current.x;
         iy += joy.current.y;
       }
-      // 입력은 화면 기준 → 시점에 맞춰 격자 벡터로
-      const gin = screenInputToGrid(viewRef.current, ix, iy);
-      const next = world.step(p, gin.x, gin.y, dt);
+      // 입력은 화면 기준. 아이소는 화면 속도 일정 + 실제 이동 기준 8방향, 탑뷰는 기존 격자 이동
+      const gin = screenInputToGrid("td", ix, iy);
+      const next = viewRef.current === "iso" ? moveIso(world, p, ix, iy, dt) : world.step(p, gin.x, gin.y, dt);
       playerRef.current = next;
 
-      // 포털: 밟으면 이동 (연속 발동 방지)
-      if (now > portalCooldown.current) {
-        const portal = world.portalAt(next);
-        if (portal && portal.type === "portal") {
-          portalCooldown.current = now + 900;
-          if (portal.targetId) {
-            const exit = world.portalExit(portal.targetId);
-            if (exit) teleport(exit);
-          } else if (portal.targetMapId) {
+      // 포털: 밟으면 이동. 쿨다운 + 포털 칸을 벗어났다가 다시 밟아야 발동(도착 직후 되돌아감 방지)
+      const portal = world.portalAt(next);
+      if (!portal) portalArmed.current = true;
+      if (portal && portal.type === "portal" && portalArmed.current && now > portalCooldown.current) {
+        portalCooldown.current = now + 900;
+        portalArmed.current = false;
+        if (portal.targetMapId) {
+          const target = loadMap(portal.targetMapId);
+          if (target) {
             setFading(true);
             setTimeout(() => {
-              window.location.href = `/play/${projectId}?map=${portal.targetMapId}`;
-            }, 250);
+              arrivalRef.current = portal.targetId ?? null;
+              window.history.replaceState(null, "", `/play/${projectId}?map=${target.id}`);
+              setDoc(target);
+              setFading(false);
+            }, 220);
           }
+        } else if (portal.targetId) {
+          const exit = world.portalExit(portal.targetId);
+          if (exit) teleport(exit);
         }
       }
 
@@ -184,7 +198,16 @@ export default function Play({ projectId }: { projectId: string }) {
       lastStats = r.render({
         mode: "play",
         time: t,
-        player: { x: next.x, y: next.y, dir: next.dir, moving: next.moving, style: AVATAR_COLORS[0], name: "나" },
+        player: {
+          x: next.x,
+          y: next.y,
+          dir: next.dir,
+          moving: next.moving,
+          face8: next.face8,
+          walkFrame: viewRef.current === "iso" ? walkFrame(next) : undefined,
+          style: AVATAR_COLORS[0],
+          name: "나",
+        },
         nearInteraction: n && !dialogRef.current ? { x: n.x, y: n.y } : null,
       });
       return lastStats.frameMs;
@@ -196,6 +219,7 @@ export default function Play({ projectId }: { projectId: string }) {
       setFading(true);
       setTimeout(() => {
         playerRef.current = exit;
+        portalArmed.current = false;
         const c = follow(exit.x, exit.y);
         r.centerOn(c.x, c.y);
         setFading(false);

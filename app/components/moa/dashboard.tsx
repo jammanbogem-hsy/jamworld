@@ -5,13 +5,14 @@ import { loadViewAtlases } from "@/lib/render/atlas";
 import { readView } from "@/lib/render/view-pref";
 import { drawMiniMap } from "@/lib/render/minimap";
 import { WorldRenderer } from "@/lib/render/renderer";
-import { parseMapJson } from "@/lib/world/io";
+import { parseBundle } from "@/lib/world/bundle";
 import { SAMPLE_BUILDERS } from "@/lib/world/samples";
 import {
   buildTemplate,
   createProject,
   deleteProject,
-  importProjectFromMap,
+  importProjectState,
+  newId,
   listProjects,
   loadMap,
   type TemplateKey,
@@ -96,13 +97,18 @@ export default function Dashboard() {
   }
 
   async function onImport(file: File) {
-    const r = parseMapJson(await file.text());
+    // 프로젝트 번들(여러 페이지·페이지 간 포털)과 맵 한 장 JSON 모두 받는다. 새 id 로 새 스페이스를 만든다
+    const r = parseBundle(await file.text(), () => newId("map"));
     if (!r.ok) {
       setError(`가져오기 실패: ${r.errors.map((e) => e.message).join(", ")}`);
       return;
     }
-    const p = importProjectFromMap(r.doc);
-    window.location.href = `/editor/${p.id}`;
+    try {
+      const p = importProjectState(r.name, r.description, r.ps);
+      window.location.href = `/editor/${p.id}`;
+    } catch (e) {
+      setError(`가져오기 실패: ${e instanceof Error ? e.message : "저장소 오류"}`);
+    }
   }
 
   function remove(p: Project) {
